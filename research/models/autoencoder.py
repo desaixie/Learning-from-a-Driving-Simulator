@@ -16,18 +16,18 @@ os.environ["KERAS_BACKEND"] = "tensorflow"
 import numpy as np
 import cv2
 import tensorflow as tf
-from utils import load, save
-from layers import Deconv2D
+from .utils import load, save
+from .layers import Deconv2D
 from keras import backend as K
 from keras.layers import Input, Dense, Reshape, Activation, Convolution2D, LeakyReLU, Flatten, BatchNormalization as BN
 from keras.models import Sequential, Model
-from keras import initializations
+from keras import initializers
 from functools import partial
 
 learning_rate = .0002
 beta1 = .5
 z_dim = 512
-normal = partial(initializations.normal, scale=.02)
+normal = partial(initializers.normal, scale=.02)
 
 
 def mean_normal(shape, mean=1., scale=0.02, name=None):

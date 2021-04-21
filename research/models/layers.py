@@ -3,8 +3,9 @@ os.environ["KERAS_BACKEND"] = "tensorflow"
 import numpy as np
 import tensorflow as tf
 from keras.engine import Layer, InputSpec
-from keras import backend as K, regularizers, constraints, initializations, activations
-from keras.layers.recurrent import Recurrent, time_distributed_dense
+from keras import backend as K, regularizers, constraints, initializers, activations
+from keras.layers.recurrent import Recurrent
+from keras.layers import Dense, TimeDistributed
 
 
 class Deconv2D(Layer):
@@ -471,9 +472,10 @@ class CondDreamyRNN(Recurrent):
           input_shape = self.input_spec[0].shape
           input_dim = input_shape[2]
           timesteps = input_shape[1]
-          return time_distributed_dense(x, self.W, self.b, self.dropout_W,
+          dense = Dense(x, self.W, self.b, self.dropout_W,
                                         input_dim, self.output_dim,
                                         timesteps)
+          return TimeDistributed(dense)
       else:
           return x
 

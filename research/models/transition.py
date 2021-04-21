@@ -3,14 +3,16 @@ import os
 os.environ["KERAS_BACKEND"] = "tensorflow"
 import numpy as np
 import cv2
-import tensorflow as tf
-from layers import DreamyRNN
-from keras import backend as K
+# import tensorflow as tf
+import tensorflow.compat.v1 as tf  # compat
+from .layers import DreamyRNN
+#from keras import backend as K
+import tensorflow.python.keras.backend as K  #compat
 from keras.layers import Input
 from keras.models import Sequential
-from keras import initializations
-import autoencoder  # this is our autoencoder with GAN cost function
-from utils import load, save
+from keras import initializers
+from . import autoencoder  # this is our autoencoder with GAN cost function
+from .utils import load, save
 from functools import partial
 
 learning_rate = .0008
@@ -18,7 +20,7 @@ beta1 = .5
 z_dim = 512  # dimensions of the lattent space where guassian samples are taken from
 time = 5  # how long teacher forcing
 out_leng = 10  # how long should the transition model go on its own after teacher forcing
-normal = partial(initializations.normal, scale=.02)
+normal = partial(initializers.normal, scale=.02)
 G_file_path = "./outputs/results_autoencoder/G_weights.keras"
 E_file_path = "./outputs/results_autoencoder/E_weights.keras"
 
