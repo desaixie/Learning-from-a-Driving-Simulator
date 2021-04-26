@@ -30,7 +30,9 @@ def old_cleanup(data):
 
 def gen(hwm, host, port):
     for tup in client_generator(hwm=hwm, host=host, port=port):
-        X = cleanup(tup)
+        # cleanup is defined in autoencoder.py and transition.py.
+        X = cleanup(tup)  # tup = (X_batch, angle_batch, speed_batch), X = normalized X_batch
+        # angle and speed is discarded because generative model doesn't use them (they are in transition model)
         yield X
 
 
@@ -68,7 +70,7 @@ def train_model(name, g_train, d_train, sampler, generator, samples_per_epoch, n
         samples_seen = 0
         batch_index = 0
         while samples_seen < samples_per_epoch:
-            z, x = next(generator)
+            z, x = next(generator)  # two np.ndarray,
             # build batch logs
             batch_logs = {}
             if type(x) is list:
