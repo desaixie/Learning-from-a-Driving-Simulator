@@ -24,7 +24,7 @@ parser.add_argument('--seed', default=1, type=int, help='manual seed')
 parser.add_argument('--epoch_size', type=int, default=600, help='epoch size')
 parser.add_argument('--image_width', type=int, default=64, help='the height / width of the input image to network')
 parser.add_argument('--channels', default=3, type=int)
-parser.add_argument('--dataset', default='lab_pose', help='predictor training data: lab_pose or gaz_pose')
+parser.add_argument('--dataset', default='driving', help='predictor training data: highway driving dataset, or lab_pose or gaz_pose')
 parser.add_argument('--n_past', type=int, default=3, help='number of frames to condition on')
 parser.add_argument('--n_future', type=int, default=1, help='number of frames to predict during training')
 parser.add_argument('--rnn_size', type=int, default=256, help='dimensionality of hidden layer')
@@ -50,6 +50,13 @@ elif 'gaz' in opt.dataset:
     opt.data_root = 'data/dataset_imitation/sim/targets/target1'
     opt.skip_factor = 10
     opt.n_past = 5
+elif opt.dataset == 'driving':
+    # receive batches from server
+    # TODO
+    # opt.data_root = 'data/dataset_imitation/sim/targets/target1'
+    # opt.skip_factor = 10
+    # opt.n_past = 5
+    pass
 
 if opt.model_dir != '':
     # load model and continue training from checkpoint

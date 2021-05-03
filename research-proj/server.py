@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Note:
 Part of this code was copied and modified from github.com/mila-udem/fuel.git (MIT License)
