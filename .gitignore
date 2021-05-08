@@ -4,6 +4,7 @@ Report*
 wget-log*
 future_image_similarity/data/lab*
 future_image_similarity/data/sim*
+expDDPG*
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
