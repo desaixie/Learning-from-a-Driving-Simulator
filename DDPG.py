@@ -69,42 +69,39 @@ action_dim = env.action_space.shape[0]
 max_action = float(env.action_space.high[0])
 min_Val = torch.tensor(1e-7, dtype=torch.float, device=device) # min value
 
-directory = './exp' + script_name + args.env_name +'./'
+directory = './logs/exp' + script_name + args.env_name +'./'
 
-class Replay_buffer():
-    '''
+class ReplayBuffer():
+    """
     Code based on:
     https://github.com/openai/baselines/blob/master/baselines/deepq/replay_buffer.py
-    Expects tuples of (state, next_state, action, reward, done)
-    '''
+    Expects tuples of (state, action, reward, next_state, done)
+    """
     def __init__(self, max_size=args.capacity):
         self.storage = []
         self.max_size = max_size
         self.ptr = 0
     
     def push(self, data):
+        """ data: tuple of (state, action, reward, next_state, done)"""
+        tensor_data = []
+        for d in data:
+            tensor_data.append(torch.tensor(d, dtype=torch.float, device=device))
         if len(self.storage) == self.max_size:
-            self.storage[int(self.ptr)] = data
+            self.storage[int(self.ptr)] = tensor_data
             self.ptr = (self.ptr + 1) % self.max_size
         else:
-            self.storage.append(data)
+            self.storage.append(tensor_data)
     
     def sample(self, batch_size):
-        ind = np.random.randint(0, len(self.storage), size=batch_size)
-        x, y, u, r, d = [], [], [], [], []
-        
-        for i in ind:
-            X, Y, U, R, D = self.storage[i]
-            x.append(np.array(X, copy=False))
-            y.append(np.array(Y, copy=False))
-            u.append(np.array(U, copy=False))
-            r.append(np.array(R, copy=False))
-            d.append(np.array(D, copy=False))
-        
-        return np.array(x), np.array(y), np.array(u), np.array(r).reshape(-1, 1), np.array(d).reshape(-1, 1)
+        minibatch = random.sample(self.storage, batch_size)
+        states, actions, rewards, next_states, dones = zip(*minibatch)
+        states, actions, rewards, next_states, dones = torch.stack(states), torch.stack(actions), torch.stack(rewards).unsqueeze(1), torch.stack(next_states), torch.stack(dones).unsqueeze(1)  # cannot cat 0-D tensors, stack them to 1D. stacking states/actions to insert batch_size dim before. unsqueeze to append dim
+        return states, actions, rewards, next_states, dones
 
 
 class Actor(nn.Module):
+    # TODO BatchNorm
     def __init__(self, state_dim, action_dim, max_action):
         super(Actor, self).__init__()
         
@@ -117,7 +114,8 @@ class Actor(nn.Module):
     def forward(self, x):
         x = F.relu(self.l1(x))
         x = F.relu(self.l2(x))
-        x = self.max_action * torch.tanh(self.l3(x))
+        x = self.max_action * torch.tanh(self.l3(x))  # first contraint to (-1,1), then scale to max_action
+        # TODO support multiple actions
         return x
 
 
@@ -129,8 +127,8 @@ class Critic(nn.Module):
         self.l2 = nn.Linear(400, 300)
         self.l3 = nn.Linear(300, 1)
     
-    def forward(self, x, u):
-        x = F.relu(self.l1(torch.cat([x, u], 1)))
+    def forward(self, x, action):
+        x = F.relu(self.l1(torch.cat([x, action], 1)))
         x = F.relu(self.l2(x))
         x = self.l3(x)
         return x
@@ -147,7 +145,7 @@ class DDPG(object):
         self.critic_target.load_state_dict(self.critic.state_dict())
         self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=1e-3)
         
-        self.replay_buffer = Replay_buffer()
+        self.replay_buffer = ReplayBuffer()
         self.writer = SummaryWriter(directory)
         self.num_critic_update_iteration = 0
         self.num_actor_update_iteration = 0
@@ -162,12 +160,8 @@ class DDPG(object):
     def update(self):
         for it in range(args.update_iteration):
             # Sample replay buffer
-            x, y, u, r, d = self.replay_buffer.sample(args.batch_size)
-            state = torch.tensor(x, dtype=torch.float, device=device)
-            action = torch.tensor(u, dtype=torch.float, device=device)
-            next_state = torch.tensor(y, dtype=torch.float, device=device)
-            done = torch.tensor(1-d, dtype=torch.float, device=device)
-            reward = torch.tensor(r, dtype=torch.float, device=device)
+            state, action, reward, next_state, done = self.replay_buffer.sample(args.batch_size)
+            done = 1-done  # 0 if done (so multiply done = 0 below), 1 else
             
             # train critic
             target_Q = self.critic_target(next_state, self.actor_target(next_state))
@@ -266,12 +260,23 @@ def main():
     elif args.mode == 'train':
         if args.load: agent.load()
         total_step = 0
+        # initialize ReplayBuffer
+        state = env.reset()
+        for i in range(args.batch_size):
+            action = env.action_space.sample()
+            next_state, reward, done, info = env.step(action)
+            agent.replay_buffer.push((state, action, reward, next_state, np.float(done)))
+            state = next_state
+            if done:
+                state = env.reset()
+        # run episodes
         for i in range(args.max_episode):
             start_time = time.time()
             total_reward = 0
             step = 0
             state = env.reset()
-            
+
+            # a timestep
             for t in count():
                 action = agent.select_action(state)
                 # action = action + exploration_noise
@@ -280,7 +285,7 @@ def main():
                 
                 next_state, reward, done, info = env.step(action)
                 if args.render and i >= args.render_interval : env.render()
-                agent.replay_buffer.push((state, next_state, action, reward, np.float(done)))
+                agent.replay_buffer.push((state, action, reward, next_state, np.float(done)))
                 state = next_state
                 if done:
                     break
@@ -289,8 +294,8 @@ def main():
                 
             total_step += step+1
             agent.sum_rewards.append(total_reward)
-            agent.update()
-            print("Episode {}, length: {} timesteps, reward: {}, moving average reward: {}, time used: {}".format(
+            agent.update()  # train agent at the end of the episode
+            print("Episode {}, length: {} timesteps, reward: {:.1f}, moving average reward: {:.1f}, time used: {:.1f}".format(
                     i, step, total_reward, np.mean(agent.sum_rewards[-10:]), time.time() - start_time))
             # "Total T: %d Episode Num: %d Episode T: %d Reward: %f
             
