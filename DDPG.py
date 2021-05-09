@@ -32,14 +32,14 @@ parser.add_argument('--mode', default='train', type=str) # mode = 'train' or 'te
 # Note that DDPG is feasible about hyper-parameters.
 # You should fine-tuning if you change to another environment.
 parser.add_argument("--env_name", default="InvertedPendulumMuJoCoEnv-v0")
-parser.add_argument('--tau',  default=0.005, type=float) # target smoothing coefficient
+parser.add_argument('--tau',  default=0.005, type=float) # target smoothing coefficient, 0.001 in DDPG paper
 parser.add_argument('--target_update_interval', default=1, type=int)
 parser.add_argument('--test_iteration', default=10, type=int)
 
 parser.add_argument('--learning_rate', default=1e-4, type=float)
-parser.add_argument('--gamma', default=0.99, type=int) # discounted factor
-parser.add_argument('--capacity', default=1000000, type=int) # replay buffer size
-parser.add_argument('--batch_size', default=100, type=int) # mini batch size
+parser.add_argument('--gamma', default=0.99, type=int) # discounted factor, 0.99 in DDPG paper
+parser.add_argument('--capacity', default=1000000, type=int) # replay buffer size, 1e6 in DDPG paper
+parser.add_argument('--batch_size', default=100, type=int) # mini batch size, 64 for low-dim and 16 for pixel in DDPG paper
 parser.add_argument('--seed', default=False, type=bool)
 parser.add_argument('--random_seed', default=9527, type=int)
 # optional parameters
@@ -123,13 +123,14 @@ class Critic(nn.Module):
     def __init__(self, state_dim, action_dim):
         super(Critic, self).__init__()
         
-        self.l1 = nn.Linear(state_dim + action_dim, 400)
+        self.l1 = nn.Linear(state_dim, 400)
         self.l2 = nn.Linear(400, 300)
+        self.l2action = nn.Linear(action_dim, 300)
         self.l3 = nn.Linear(300, 1)
     
     def forward(self, x, action):
-        x = F.relu(self.l1(torch.cat([x, action], 1)))
-        x = F.relu(self.l2(x))
+        x = F.relu(self.l1(x))
+        x = F.relu(self.l2(x) + self.l2action(action))
         x = self.l3(x)
         return x
 
@@ -143,7 +144,7 @@ class DDPG(object):
         self.critic = Critic(state_dim, action_dim).to(device)
         self.critic_target = Critic(state_dim, action_dim).to(device)
         self.critic_target.load_state_dict(self.critic.state_dict())
-        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=1e-3)
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=1e-3, weight_decay=1e-2)
         
         self.replay_buffer = ReplayBuffer()
         self.writer = SummaryWriter(directory)
