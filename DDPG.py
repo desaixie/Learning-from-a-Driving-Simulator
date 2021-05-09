@@ -20,10 +20,11 @@ import pybulletgym  # register PyBullet enviroments with open ai gym
 import pybullet
 import pybullet_data
 
+import Wrapper
+
 '''
 Implementation of Deep Deterministic Policy Gradients (DDPG) with pytorch
-riginal paper: https://arxiv.org/abs/1509.02971
-Not the author's implementation !
+original paper: https://arxiv.org/abs/1509.02971
 '''
 
 parser = argparse.ArgumentParser()
@@ -32,6 +33,9 @@ parser.add_argument('--mode', default='train', type=str) # mode = 'train' or 'te
 # Note that DDPG is feasible about hyper-parameters.
 # You should fine-tuning if you change to another environment.
 parser.add_argument("--env_name", default="InvertedPendulumMuJoCoEnv-v0")
+parser.add_argument('--pixel', dest='pixel', action='store_true')  # if env has pixel state, use pixel Actor and Critic
+parser.add_argument('--no-pixel', dest='pixel', action='store_false')
+parser.set_defaults(pixel=False)
 parser.add_argument('--tau',  default=0.005, type=float) # target smoothing coefficient, 0.001 in DDPG paper
 parser.add_argument('--target_update_interval', default=1, type=int)
 parser.add_argument('--test_iteration', default=10, type=int)
@@ -58,16 +62,18 @@ args = parser.parse_args()
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 script_name = os.path.basename(__file__)
 env = gym.make(args.env_name)
+if args.pixel:
+    env = Wrapper.make_env(env)
 
 if args.seed:
     env.seed(args.random_seed)
     torch.manual_seed(args.random_seed)
     np.random.seed(args.random_seed)
 
-state_dim = env.observation_space.shape[0]
+state_dim = env.observation_space.shape if args.pixel else env.observation_space.shape[0]
+state_dim = state_dim[:2] + (4,)  # 4 stacked frames from Wrappaer
 action_dim = env.action_space.shape[0]
-max_action = float(env.action_space.high[0])
-min_Val = torch.tensor(1e-7, dtype=torch.float, device=device) # min value
+max_action = torch.tensor(env.action_space.high, dtype=torch.float, device=device) if args.pixel else float(env.action_space.high[0])
 
 directory = './logs/exp' + script_name + args.env_name +'./'
 
@@ -83,74 +89,148 @@ class ReplayBuffer():
         self.ptr = 0
     
     def push(self, data):
-        """ data: tuple of (state, action, reward, next_state, done)"""
-        tensor_data = []
-        for d in data:
-            tensor_data.append(torch.tensor(d, dtype=torch.float, device=device))
+        """ data: tuple of (state, action, reward, next_state, done)
+            state, next_state are GPU tensors, the rest are scalar, floats"""
         if len(self.storage) == self.max_size:
-            self.storage[int(self.ptr)] = tensor_data
+            self.storage[int(self.ptr)] = data
             self.ptr = (self.ptr + 1) % self.max_size
         else:
-            self.storage.append(tensor_data)
+            self.storage.append(data)
     
     def sample(self, batch_size):
         minibatch = random.sample(self.storage, batch_size)
         states, actions, rewards, next_states, dones = zip(*minibatch)
-        states, actions, rewards, next_states, dones = torch.stack(states), torch.stack(actions), torch.stack(rewards).unsqueeze(1), torch.stack(next_states), torch.stack(dones).unsqueeze(1)  # cannot cat 0-D tensors, stack them to 1D. stacking states/actions to insert batch_size dim before. unsqueeze to append dim
+        states, actions, rewards, next_states, dones = torch.cat(states), torch.tensor(actions, dtype=torch.float, device=device), torch.tensor(rewards, dtype=torch.float, device=device).unsqueeze(1), torch.cat(next_states), torch.tensor(dones, dtype=torch.float, device=device).unsqueeze(1)  # cannot cat 0-D tensors, stack them to 1D. stacking states/actions to insert batch_size dim before. unsqueeze to append dim
         return states, actions, rewards, next_states, dones
 
 
 class Actor(nn.Module):
-    def __init__(self, state_dim, action_dim, max_action):
+    def __init__(self, state_dim, action_dim, max_action, pixel=False):
         super(Actor, self).__init__()
         self.max_action = max_action
-        self.layers = nn.Sequential(
-            nn.BatchNorm1d(state_dim),  # remember to self.actor.eval() when not training
-            # hidden1
-            nn.Linear(state_dim, 400),
-            nn.BatchNorm1d(400),
-            nn.ReLU(inplace=True),
-            # hidden2
-            nn.Linear(400, 300),
-            nn.BatchNorm1d(300),
-            nn.ReLU(inplace=True),
-            # output
-            nn.Linear(300, action_dim),
-        )
+        self.pixel = pixel
+
+        if pixel:
+            self.W, self.H, self.C = state_dim
+            self.feature_extractor = nn.Sequential(
+                nn.BatchNorm2d(self.C),
+        
+                nn.Conv2d(in_channels=self.C, out_channels=32, kernel_size=8, stride=4),  # in/output shape: (batch_size, in/out channels, H, W)
+                nn.BatchNorm2d(32),
+                nn.ReLU(inplace=True),
+        
+                nn.Conv2d(32, 32, 4, 2),
+                nn.BatchNorm2d(32),
+                nn.ReLU(inplace=True),
+        
+                nn.Conv2d(32, 32, 3, 1),
+                nn.BatchNorm2d(32),
+                nn.ReLU(inplace=True),  # outputs (1, 64, 7, 7)
+            )
+            # automatically determine dimension out flattened CNN output
+            rand = torch.randn((1, self.C, self.H, self.W))  # (N, C, H, W)
+            self.linear_dim = torch.flatten(self.feature_extractor(rand), start_dim=1).size()[1]
+            self.actor = nn.Sequential(
+                nn.Linear(self.linear_dim, 200),
+                nn.BatchNorm1d(200),
+                nn.ReLU(inplace=True),
+                nn.Linear(200, action_dim),
+            )
+        else:
+            self.layers = nn.Sequential(
+                nn.BatchNorm1d(state_dim),  # remember to self.actor.eval() when not training
+                # hidden1
+                nn.Linear(state_dim, 400),
+                nn.BatchNorm1d(400),
+                nn.ReLU(inplace=True),
+                # hidden2
+                nn.Linear(400, 300),
+                nn.BatchNorm1d(300),
+                nn.ReLU(inplace=True),
+                # output
+                nn.Linear(300, action_dim),
+            )
         
     def forward(self, x):
-        x = self.layers(x)
-        x = self.max_action * torch.tanh(x)  # first constraint to (-1,1), then scale to max_action
-        # TODO support multiple actions
-        return x
+        if self.pixel:
+            x = self.feature_extractor(x)
+            x = torch.flatten(x, 1)
+            x = self.actor(x)  # (batch_size, num_actions)
+            actions = self.max_action * torch.tanh(x)  # first constraint to (-1,1), then scale to max_action
+            return actions
+        else:
+            x = self.layers(x)
+            actions = self.max_action * torch.tanh(x)  # first constraint to (-1,1), then scale to max_action
+        return actions
 
 
 class Critic(nn.Module):
-    def __init__(self, state_dim, action_dim):
+    def __init__(self, state_dim, action_dim, pixel=False):
         super(Critic, self).__init__()
-        self.b0 = nn.BatchNorm1d(state_dim)
-        self.l1 = nn.Linear(state_dim, 400)
-        self.b1 = nn.BatchNorm1d(400)
-        self.l2 = nn.Linear(400, 300)
-        self.l2action = nn.Linear(action_dim, 300)
-        self.l3 = nn.Linear(300, 1)
+        self.pixel = pixel
+
+        if pixel:
+            self.W, self.H, self.C = state_dim
+            self.feature_extractor = nn.Sequential(
+                nn.BatchNorm2d(self.C),
+        
+                nn.Conv2d(in_channels=self.C, out_channels=32, kernel_size=8, stride=4),  # in/output shape: (batch_size, in/out channels, H, W)
+                nn.BatchNorm2d(32),
+                nn.ReLU(inplace=True),
+        
+                nn.Conv2d(32, 32, 4, 2),
+                nn.BatchNorm2d(32),
+                nn.ReLU(inplace=True),
+        
+                nn.Conv2d(32, 32, 3, 1),
+                nn.BatchNorm2d(32),
+                nn.ReLU(inplace=True),  # outputs (1, 64, 7, 7)
+            )
+            # automatically determine dimension out flattened CNN output
+            rand = torch.randn((1, self.C, self.H, self.W))  # (N, C, H, W)
+            self.linear_dim = torch.flatten(self.feature_extractor(rand), start_dim=1).size()[1]
+            self.actor = nn.Sequential(
+                nn.Linear(self.linear_dim, 200),
+                nn.ReLU(inplace=True),
+                nn.Linear(200, action_dim)
+            )
+            self.l1 = nn.Linear(self.linear_dim, 200)
+            self.b1 = nn.BatchNorm1d(200)
+            self.l2 = nn.Linear(200, 200)
+            self.l2action = nn.Linear(action_dim, 200)
+            self.l3 = nn.Linear(200, 1)  # output
+        else:
+            self.b0 = nn.BatchNorm1d(state_dim)
+            self.l1 = nn.Linear(state_dim, 400)
+            self.b1 = nn.BatchNorm1d(400)
+            self.l2 = nn.Linear(400, 300)
+            self.l2action = nn.Linear(action_dim, 300)
+            self.l3 = nn.Linear(300, 1)  # output
     
     def forward(self, x, action):
-        x = self.b0(x)
-        x = F.relu(self.b1(self.l1(x)))
-        x = F.relu(self.l2(x) + self.l2action(action))
-        x = self.l3(x)
-        return x
+        if self.pixel:
+            x = self.feature_extractor(x)
+            x = torch.flatten(x, 1)
+            x = F.relu(self.b1(self.l1(x)))
+            x = F.relu(self.l2(x) + self.l2action(action))
+            x = self.l3(x)
+            return x
+        else:
+            x = self.b0(x)
+            x = F.relu(self.b1(self.l1(x)))
+            x = F.relu(self.l2(x) + self.l2action(action))
+            x = self.l3(x)
+            return x
 
 
 class DDPG(object):
-    def __init__(self, state_dim, action_dim, max_action):
-        self.actor = Actor(state_dim, action_dim, max_action).to(device)
-        self.actor_target = Actor(state_dim, action_dim, max_action).to(device)
+    def __init__(self, state_dim, action_dim, max_action, pixel):
+        self.actor = Actor(state_dim, action_dim, max_action, pixel).to(device)
+        self.actor_target = Actor(state_dim, action_dim, max_action, pixel).to(device)
         self.actor_target.load_state_dict(self.actor.state_dict())
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=1e-4)
-        self.critic = Critic(state_dim, action_dim).to(device)
-        self.critic_target = Critic(state_dim, action_dim).to(device)
+        self.critic = Critic(state_dim, action_dim, pixel).to(device)
+        self.critic_target = Critic(state_dim, action_dim, pixel).to(device)
         self.critic_target.load_state_dict(self.critic.state_dict())
         self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=1e-3, weight_decay=1e-2)
         
@@ -163,7 +243,6 @@ class DDPG(object):
         
     def select_action(self, state):
         # state = torch.FloatTensor(state.reshape(1, -1)).to(device)
-        state = torch.tensor(state, dtype=torch.float, device=device).unsqueeze(0)  # inserts an axis representing batch of 1
         self.actor.eval()
         with torch.no_grad():
             return self.actor(state).cpu().data.numpy().flatten()
@@ -253,7 +332,7 @@ class DDPG(object):
         plt.show()
 
 def main():
-    agent = DDPG(state_dim, action_dim, max_action)
+    agent = DDPG(state_dim, action_dim, max_action, args.pixel)
     ep_r = 0
     if args.mode == 'test':
         agent.load()
@@ -275,9 +354,12 @@ def main():
         total_step = 0
         # initialize ReplayBuffer
         state = env.reset()
+        # states are expected to be GPU tensor when they are used later
+        state = torch.tensor(state, dtype=torch.float, device=device).permute(2, 0, 1).unsqueeze(0)  # inserts an axis representing batch of 1
         for i in range(args.batch_size):
             action = env.action_space.sample()
             next_state, reward, done, info = env.step(action)
+            next_state = torch.tensor(next_state, dtype=torch.float, device=device).permute(2, 0, 1).unsqueeze(0)  # inserts an axis representing batch of 1
             agent.replay_buffer.push((state, action, reward, next_state, np.float(done)))
             state = next_state
             if done:
@@ -288,6 +370,7 @@ def main():
             total_reward = 0
             step = 0
             state = env.reset()
+            state = torch.tensor(state, dtype=torch.float, device=device).permute(2, 0, 1).unsqueeze(0)  # inserts an axis representing batch of 1
 
             # a timestep
             for t in count():
@@ -297,6 +380,7 @@ def main():
                     env.action_space.low, env.action_space.high)
                 
                 next_state, reward, done, info = env.step(action)
+                next_state = torch.tensor(next_state, dtype=torch.float, device=device).permute(2, 0, 1).unsqueeze(0)  # inserts an axis representing batch of 1
                 if args.render and i >= args.render_interval : env.render()
                 agent.replay_buffer.push((state, action, reward, next_state, np.float(done)))
                 state = next_state
