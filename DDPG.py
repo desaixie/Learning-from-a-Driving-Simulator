@@ -101,20 +101,26 @@ class ReplayBuffer():
 
 
 class Actor(nn.Module):
-    # TODO BatchNorm
     def __init__(self, state_dim, action_dim, max_action):
         super(Actor, self).__init__()
-        
-        self.l1 = nn.Linear(state_dim, 400)
-        self.l2 = nn.Linear(400, 300)
-        self.l3 = nn.Linear(300, action_dim)
-        
         self.max_action = max_action
-    
+        self.layers = nn.Sequential(
+            nn.BatchNorm1d(state_dim),  # remember to self.actor.eval() when not training
+            # hidden1
+            nn.Linear(state_dim, 400),
+            nn.BatchNorm1d(400),
+            nn.ReLU(inplace=True),
+            # hidden2
+            nn.Linear(400, 300),
+            nn.BatchNorm1d(300),
+            nn.ReLU(inplace=True),
+            # output
+            nn.Linear(300, action_dim),
+        )
+        
     def forward(self, x):
-        x = F.relu(self.l1(x))
-        x = F.relu(self.l2(x))
-        x = self.max_action * torch.tanh(self.l3(x))  # first contraint to (-1,1), then scale to max_action
+        x = self.layers(x)
+        x = self.max_action * torch.tanh(x)  # first constraint to (-1,1), then scale to max_action
         # TODO support multiple actions
         return x
 
@@ -122,14 +128,16 @@ class Actor(nn.Module):
 class Critic(nn.Module):
     def __init__(self, state_dim, action_dim):
         super(Critic, self).__init__()
-        
+        self.b0 = nn.BatchNorm1d(state_dim)
         self.l1 = nn.Linear(state_dim, 400)
+        self.b1 = nn.BatchNorm1d(400)
         self.l2 = nn.Linear(400, 300)
         self.l2action = nn.Linear(action_dim, 300)
         self.l3 = nn.Linear(300, 1)
     
     def forward(self, x, action):
-        x = F.relu(self.l1(x))
+        x = self.b0(x)
+        x = F.relu(self.b1(self.l1(x)))
         x = F.relu(self.l2(x) + self.l2action(action))
         x = self.l3(x)
         return x
@@ -156,9 +164,13 @@ class DDPG(object):
     def select_action(self, state):
         # state = torch.FloatTensor(state.reshape(1, -1)).to(device)
         state = torch.tensor(state, dtype=torch.float, device=device).unsqueeze(0)  # inserts an axis representing batch of 1
-        return self.actor(state).cpu().data.numpy().flatten()
+        self.actor.eval()
+        with torch.no_grad():
+            return self.actor(state).cpu().data.numpy().flatten()
     
     def update(self):
+        self.actor.train()
+        self.critic.train()
         for it in range(args.update_iteration):
             # Sample replay buffer
             state, action, reward, next_state, done = self.replay_buffer.sample(args.batch_size)
