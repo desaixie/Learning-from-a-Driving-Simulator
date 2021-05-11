@@ -4,8 +4,8 @@ import numpy as np
 import torch
 
 from PIL import Image
-from scipy.misc import imresize
-from scipy.misc import imread 
+# from scipy.misc import imread
+from cv2 import imread
 from math import pi, atan2, sqrt, cos, sin
 from numpy import sign
 
@@ -31,6 +31,8 @@ class Gazebo(object):
         self.d = 0
         self.skip = skip_factor
         self.N = N
+        # print(f"seq len:   {self.seq_len}")  # 6
+        # print(f"skip factor:   {self.skip}")  # 10
 
     def set_seed(self, seed):
         if not self.seed_is_set:
@@ -132,3 +134,13 @@ class Gazebo(object):
         return self.get_seq()
 
 
+    def get_action_space(self):
+        maxR = 0
+        for d in self.dirs:
+            diff_pose, _, _ = self.load_odom(d, 0, self.skip, num_cand=1)
+            expert_pose = diff_pose[0]
+            dx, dy, _ = expert_pose
+            R = dx**2 + dy**2
+            if R > maxR:
+                maxR = R  # R is the radius in radian
+        return maxR

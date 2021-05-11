@@ -1,3 +1,5 @@
+# low-dimension state space version based on https://github.com/sweetice/Deep-reinforcement-learning-with-pytorch/blob/master/Char05%20DDPG/DDPG.py
+# tested on continuous action space environments Inverted-Pendulum, Half-Cheetah, Car-Racing (pixel state)
 import argparse
 from itertools import count
 
@@ -63,6 +65,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 script_name = os.path.basename(__file__)
 env = gym.make(args.env_name)
 if args.pixel:
+    # run on headless server with $xvfb-run -s "-screen 0 1400x900x24" python DDPG.py --env_name CarRacing-v0 --pixel
     env = Wrapper.make_env(env)
 
 if args.seed:
