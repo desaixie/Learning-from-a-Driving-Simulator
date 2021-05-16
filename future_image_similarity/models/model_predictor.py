@@ -90,6 +90,7 @@ class decoder_conv(nn.Module):
                 nn.Sigmoid()
                 )
         self.up = nn.UpsamplingNearest2d(scale_factor=2)
+        # self.up.align_corners = False
 
     def forward(self, input):
         vec, skip = input 
@@ -119,11 +120,13 @@ class lstm(nn.Module):
                 nn.Tanh())
         self.hidden = self.init_hidden()
 
-    def init_hidden(self):
+    def init_hidden(self, batch_size=-1):
+        if batch_size == -1:
+            batch_size = self.batch_size
         hidden = []
         for i in range(self.n_layers):
-            hidden.append((Variable(torch.zeros(self.batch_size, self.hidden_size).cuda()),
-                           Variable(torch.zeros(self.batch_size, self.hidden_size).cuda())))
+            hidden.append((Variable(torch.zeros(batch_size, self.hidden_size).cuda()),
+                           Variable(torch.zeros(batch_size, self.hidden_size).cuda())))
         return hidden
 
     def forward(self, input):
@@ -149,11 +152,13 @@ class gaussian_lstm(nn.Module):
         self.logvar_net = nn.Linear(hidden_size, output_size)
         self.hidden = self.init_hidden()
 
-    def init_hidden(self):
+    def init_hidden(self, batch_size=-1):
+        if batch_size == -1:
+            batch_size = self.batch_size
         hidden = []
         for i in range(self.n_layers):
-            hidden.append((Variable(torch.zeros(self.batch_size, self.hidden_size).cuda()),
-                           Variable(torch.zeros(self.batch_size, self.hidden_size).cuda())))
+            hidden.append((Variable(torch.zeros(batch_size, self.hidden_size).cuda()),
+                           Variable(torch.zeros(batch_size, self.hidden_size).cuda())))
         return hidden
 
     def reparameterize(self, mu, logvar):

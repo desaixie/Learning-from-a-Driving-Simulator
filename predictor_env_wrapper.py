@@ -47,11 +47,13 @@ parser.add_argument('--num_cand', default=16, type=int, help='number of candidat
 
 opt = parser.parse_args()
 
+print("Initializing DreamGazeboEnv...")
+
 # load model
 if 'lab' in opt.dataset:
-    opt.model_dir = 'future_image_similarity/logs/lab_pose/model_predictor_pretrained'
+    opt.model_dir = 'logs/lab_pose/model_predictor_pretrained'
 elif 'gaz' in opt.dataset:
-    opt.model_dir = 'future_image_similarity/logs/gaz_pose/model_predictor_pretrained'
+    opt.model_dir = 'logs/gaz_pose/model_predictor_pretrained'  # loading model saved with new pytorch version
 saved_model = torch.load('%s/model.pth' % opt.model_dir)  # https://github.com/pytorch/pytorch/issues/3678
 model_dir = opt.model_dir
 niter = opt.niter
@@ -60,7 +62,7 @@ log_dir = opt.log_dir
 num_cand = opt.num_cand
 lr = opt.lr
 dataset = opt.dataset
-
+# applying newly specified options
 opt = saved_model['opt']
 opt.model_dir = model_dir
 opt.niter = niter
@@ -90,7 +92,6 @@ encoder = saved_model['encoder']
 decoder = saved_model['decoder']
 pose_network = saved_model['pose_network']
 conv_network = saved_model['conv_network']
-
 # from models.model_value import ModelValue
 # value_network = ModelValue()
 # value_network.apply(utils.init_weights)
@@ -109,8 +110,12 @@ decoder.to(device)
 pose_network.to(device)
 conv_network.to(device)
 # value_network.to(device)
-
 loss_criterion.to(device)
+prior.eval()  # eval avoid error on no tracked stat in BatchNorm2d, a feater added in later versions of pytorch
+encoder.eval()
+decoder.eval()
+pose_network.eval()
+conv_network.eval()
 
 # --------- load a dataset -------------------
 train_data, test_data = utils.load_dataset(opt)
@@ -148,7 +153,7 @@ class ObsSpace():
     def __init__(self, name):
         if name != "Gazebo":
             raise Exception(f"{name} is not supported")
-        self.shape = (64, 64, 3)
+        self.shape = np.array([64, 64, 3])
         self.high = 255. * np.ones((64, 64, 3))
         self.low = np.zeros((64, 64, 3))
     
@@ -156,7 +161,7 @@ class ActSpace():
     def __init__(self, name):
         if name != "Gazebo":
             raise Exception(f"{name} is not supported")
-        self.shape = 3  # (dx, dy, theta): movement in x coordinate, movement in y coordinate, angle of direction change
+        self.shape = np.array([3])  # (dx, dy, theta): movement in x coordinate, movement in y coordinate, angle of direction change
         self.max_angle = 0.17453292519943295*3  # 10*(pi/180)*3, 30 deg in rad, specified in gaz_value.py
         self.max_R = 0.0012  # according to Gazebo.get_action_space()
         self.high = np.array([self.max_R, self.max_R, self.max_angle])
@@ -191,14 +196,15 @@ class DreamGazeboEnv():
         d = train_data.dirs[traj_id]
         fname = os.path.join(d, 'rgb', 'frame'+str(0).zfill(6)+'.jpg')  # the first image in trajectory
         im = imread(fname).reshape(1, 64, 64, 3)
-        self.state = im / 255.
+        self.state = torch.tensor(im / 255., dtype=torch.float, device=device).permute(0, 3, 1, 2)  # make state ready to passed into encoder
         return self.state
     
     def step(self, action):
         """Step in the state-transition model given action, returns next_state, reward, done, info"""
+        action = torch.tensor(action, dtype=torch.float, device=device)
         # initialize the hidden state.
         with torch.no_grad():
-            self.prior.hidden = prior.init_hidden()
+            self.prior.hidden = prior.init_hidden(batch_size=1)  # https://stackoverflow.com/a/58177979/8667103
 
             h_conv = self.encoder(self.state)
             h_conv, skip = h_conv
@@ -221,4 +227,4 @@ class DreamGazeboEnv():
     def render(self):
         raise Exception("render is not supported")
 # d = DreamGazeboEnv()
-print(train_data.get_action_space())  # maxR = 0.0012
+# print(train_data.get_action_space())  # maxR = 0.0012
