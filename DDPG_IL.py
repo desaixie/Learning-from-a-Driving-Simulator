@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 
 #import from code in this project
 from predictor_env_wrapper import DreamGazeboEnv
+from future_image_similarity import utils
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--mode', default='train', type=str) # mode = 'train' or 'test'
@@ -228,6 +229,7 @@ class DDPG_IL(object):
             self.num_actor_update_iteration += 1
             self.num_critic_update_iteration += 1
     
+    
     def save(self):
         torch.save(self.actor.state_dict(), directory + 'actor.pth')
         torch.save(self.critic.state_dict(), directory + 'critic.pth')
@@ -273,6 +275,21 @@ class DDPG_IL(object):
         plt.ylabel("Loss")
         plt.legend()
         plt.show()
+        
+    def plot_trajectory(self, trajectory, episode):
+        """ trajectory is a list of states of DreamGazeboEnv, which is essentially imagined robot observation at each timestep"""
+        to_plot = []
+        ncol = 5
+        i = 0
+        while i < len(trajectory):
+            row = []
+            for _ in range(ncol):
+                row.append(trajectory[i])
+                i += 1
+            if len(row) == ncol:  # discard row not filled
+                to_plot.append(row)
+        fname = f"logs/trajectory/DDPG_IL/{episode}.png"
+        utils.save_tensors_image(fname, to_plot)
 
 # def main():
 agent = DDPG_IL(state_dim, action_dim, max_action)
@@ -297,24 +314,23 @@ elif args.mode == 'train':
     total_step = 0
     # initialize ReplayBuffer
     state = env.reset()  # (1, 64, 64, 3)
-    # states are expected to be GPU tensor when they are used later
-    # state = torch.tensor(state, dtype=torch.float, device=device).permute(0, 3, 1, 2)  # DreamGazeboEnv returns state already with batch dimension
     for i in range(args.batch_size):
         action = env.action_space.sample()
         next_state, _, done, _ = env.step(action)
-        # next_state = torch.tensor(next_state, dtype=torch.float, device=device).permute(0, 3, 1, 2)  # DreamGazeboEnv returns state already with batch dimension
-        reward = 0
+        reward = 0  # SQIL reward
         agent.replay_buffer.push((state, action, reward, next_state, np.float(done)))
         state = next_state
         if done:
             state = env.reset()
+            
     # run episodes
     for i in range(args.max_episode):
         start_time = time.time()
         total_reward = 0
         step = 0
         state = env.reset()
-        # state = torch.tensor(state, dtype=torch.float, device=device).permute(0, 3, 1, 2)  # DreamGazeboEnv returns state already with batch dimension
+        trajectory = []
+        # trajectory.append(state)
 
         # a timestep
         for t in count():
@@ -324,11 +340,11 @@ elif args.mode == 'train':
                 env.action_space.low, env.action_space.high)
             
             next_state, _, done, _ = env.step(action)
-            # next_state = torch.tensor(next_state, dtype=torch.float, device=device).permute(0, 3, 1, 2)  # DreamGazeboEnv returns state already with batch dimension
             if args.render and i >= args.render_interval : env.render()
-            reward = 0
+            reward = 0  # SQIL reward
             agent.replay_buffer.push((state, action, reward, next_state, np.float(done)))
             state = next_state
+            trajectory.append(state.squeeze(dim=0))  # remove batch dimension to be plotted
             if done:
                 break
             step += 1
@@ -339,6 +355,10 @@ elif args.mode == 'train':
         agent.update()  # train agent at the end of the episode
         print("Episode {}, length: {} timesteps, reward: {:.1f}, moving average reward: {:.1f}, time used: {:.1f}".format(
                 i, step, total_reward, np.mean(agent.sum_rewards[-10:]), time.time() - start_time))
+        if i == 0:
+            start = time.time()
+            agent.plot_trajectory(trajectory[:10], i)
+            print(f"time used to plot trajectory {time.time() - start}")
         # "Total T: %d Episode Num: %d Episode T: %d Reward: %f
         
         if i % args.log_interval == 0:

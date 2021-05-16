@@ -157,9 +157,12 @@ def make_image(tensor):
     tensor = tensor.cpu().clamp(0, 1)
     if tensor.size(0) == 1:
         tensor = tensor.expand(3, tensor.size(1), tensor.size(2))
-    return scipy.misc.toimage(tensor.numpy(),
-                              high=255*tensor.max(),
-                              channel_axis=0)
+    print(tensor.size())
+    imagetensor = (tensor.permute(1, 2, 0).numpy() * 255).astype(np.uint8)  # convert to uint8, (C, H, W) to (H, W, C)
+    return Image.fromarray(imagetensor)
+    # return scipy.misc.toimage(tensor.numpy(),
+    #                           high=255*tensor.max(),
+    #                           channel_axis=0)
 
 def draw_text_tensor(tensor, text):
     np_x = tensor.transpose(0, 1).transpose(1, 2).data.cpu().numpy()
