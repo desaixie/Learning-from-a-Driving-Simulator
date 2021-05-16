@@ -116,7 +116,6 @@ class Actor(nn.Module):
         )
         
     def forward(self, x):
-        print(f"C {self.C}, x {x.size()}")
         x = self.feature_extractor(x)
         x = torch.flatten(x, 1)
         x = self.actor(x)  # (batch_size, num_actions)
@@ -304,6 +303,7 @@ elif args.mode == 'train':
         action = env.action_space.sample()
         next_state, _, done, _ = env.step(action)
         # next_state = torch.tensor(next_state, dtype=torch.float, device=device).permute(0, 3, 1, 2)  # DreamGazeboEnv returns state already with batch dimension
+        reward = 0
         agent.replay_buffer.push((state, action, reward, next_state, np.float(done)))
         state = next_state
         if done:
@@ -326,6 +326,7 @@ elif args.mode == 'train':
             next_state, _, done, _ = env.step(action)
             # next_state = torch.tensor(next_state, dtype=torch.float, device=device).permute(0, 3, 1, 2)  # DreamGazeboEnv returns state already with batch dimension
             if args.render and i >= args.render_interval : env.render()
+            reward = 0
             agent.replay_buffer.push((state, action, reward, next_state, np.float(done)))
             state = next_state
             if done:
