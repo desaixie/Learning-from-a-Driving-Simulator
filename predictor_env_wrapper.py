@@ -8,7 +8,7 @@ import random
 import os
 
 import numpy as np
-from cv2 import imread
+import PIL.Image
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -164,6 +164,7 @@ class ActSpace():
         self.shape = np.array([3])  # (dx, dy, theta): movement in x coordinate, movement in y coordinate, angle of direction change
         self.max_angle = 0.17453292519943295*3  # 10*(pi/180)*3, 30 deg in rad, specified in gaz_value.py
         self.max_R = 0.0012  # according to Gazebo.get_action_space()
+        # no need change action space according to skip_factor=10, since predictor is trained with skip and non-scaled actions
         self.high = np.array([self.max_R, self.max_R, self.max_angle])
         self.low = np.array([-self.max_R, -self.max_R, -self.max_angle])
         
@@ -192,10 +193,12 @@ class DreamGazeboEnv():
     def reset(self):
         """Randomly restart the environment to initial state of a training trajectory, return state, set corresponding episode length"""
         traj_id = random.randrange(len(self.lengths))
-        self.episode_len = self.lengths[traj_id]
+        # predictor for Gazebo is trained with seq_len = 5+1, skip = 10.
+        self.episode_len = self.lengths[traj_id] // 10  # divide by skip_factor=10
         d = train_data.dirs[traj_id]
         fname = os.path.join(d, 'rgb', 'frame'+str(0).zfill(6)+'.jpg')  # the first image in trajectory
-        im = imread(fname).reshape(1, 64, 64, 3)
+        im = np.asarray(PIL.Image.open(fname)).reshape((1, 64, 64, 3))  # PIL.Image.open read in RGB order
+        # im = imread(fname).reshape(1, 64, 64, 3)  # cv2.imread reads in BGR order
         self.state = torch.tensor(im / 255., dtype=torch.float, device=device).permute(0, 3, 1, 2)  # make state ready to passed into encoder
         return self.state
     

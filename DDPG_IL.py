@@ -286,6 +286,8 @@ class DDPG_IL(object):
             for _ in range(ncol):
                 row.append(trajectory[i])
                 i += 1
+                if i == len(trajectory):
+                    break
             if len(row) == ncol:  # discard row not filled
                 to_plot.append(row)
         fname = f"logs/trajectory/DDPG_IL/{episode}.png"
@@ -329,8 +331,8 @@ elif args.mode == 'train':
         total_reward = 0
         step = 0
         state = env.reset()
-        trajectory = []
-        # trajectory.append(state)
+        trajectory = [state.squeeze(dim=0)]
+        actions = []
 
         # a timestep
         for t in count():
@@ -345,6 +347,7 @@ elif args.mode == 'train':
             agent.replay_buffer.push((state, action, reward, next_state, np.float(done)))
             state = next_state
             trajectory.append(state.squeeze(dim=0))  # remove batch dimension to be plotted
+            actions.append(action)
             if done:
                 break
             step += 1
@@ -355,11 +358,9 @@ elif args.mode == 'train':
         agent.update()  # train agent at the end of the episode
         print("Episode {}, length: {} timesteps, reward: {:.1f}, moving average reward: {:.1f}, time used: {:.1f}".format(
                 i, step, total_reward, np.mean(agent.sum_rewards[-10:]), time.time() - start_time))
-        if i == 0:
-            start = time.time()
-            agent.plot_trajectory(trajectory[:10], i)
-            print(f"time used to plot trajectory {time.time() - start}")
-        # "Total T: %d Episode Num: %d Episode T: %d Reward: %f
+        if i % 5 == 0:
+            agent.plot_trajectory(trajectory, i)
+            print("")
         
         if i % args.log_interval == 0:
             agent.save()
