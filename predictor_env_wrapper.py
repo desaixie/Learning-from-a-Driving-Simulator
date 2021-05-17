@@ -84,6 +84,9 @@ torch.cuda.manual_seed_all(opt.seed)
 dtype = torch.cuda.FloatTensor
 
 # ---------------- load the models  ----------------
+opt.n_past = 1
+opt.n_future = 1  # SQIL training uses only the state and next state
+opt.batch_size = 1
 opt.data_root = "future_image_similarity/data/sim/targets/target1"
 print(opt)
 
@@ -120,18 +123,18 @@ conv_network.eval()
 # --------- load a dataset -------------------
 train_data, test_data = utils.load_dataset(opt)
 
-# train_loader = DataLoader(train_data,
-#                           num_workers=opt.data_threads,
-#                           batch_size=opt.batch_size,
-#                           shuffle=True,
-#                           drop_last=True,
-#                           pin_memory=True)
-# test_loader = DataLoader(test_data,
-#                          num_workers=opt.data_threads,
-#                          batch_size=opt.batch_size,
-#                          shuffle=True,
-#                          drop_last=True,
-#                          pin_memory=True)
+train_loader = DataLoader(train_data,
+                          num_workers=opt.data_threads,
+                          batch_size=opt.batch_size,
+                          shuffle=True,
+                          drop_last=True,
+                          pin_memory=True)
+test_loader = DataLoader(test_data,
+                         num_workers=opt.data_threads,
+                         batch_size=opt.batch_size,
+                         shuffle=True,
+                         drop_last=True,
+                         pin_memory=True)
 #
 # def get_training_batch():
 #     while True:
@@ -185,10 +188,15 @@ class DreamGazeboEnv():
         self.pose_network = pose_network
         self.conv_network = conv_network
         
+        
         self.episode_len = -1
         self.lengths = []
         for d1 in train_data.dirs:
             self.lengths.append(len(os.listdir(d1 + "/rgb")))
+        # provide opt of train_value to my custom files
+        self.train_loader = train_loader
+        self.test_loader = test_loader
+        self.opt = opt
     
     def reset(self):
         """Randomly restart the environment to initial state of a training trajectory, return state, set corresponding episode length"""

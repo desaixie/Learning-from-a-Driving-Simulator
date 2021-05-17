@@ -6,6 +6,7 @@ import argparse
 from itertools import count
 
 import os, sys, random, time
+from collections import deque
 import numpy as np
 
 import torch
@@ -65,18 +66,14 @@ class ReplayBuffer():
     Expects tuples of (state, action, reward, next_state, done)
     """
     def __init__(self, max_size=args.capacity):
-        self.storage = []
+        self.storage = deque(maxlen=max_size)
         self.max_size = max_size
         self.ptr = 0
     
     def push(self, data):
         """ data: tuple of (state, action, reward, next_state, done)
             state, next_state are GPU tensors, the rest are scalar, floats"""
-        if len(self.storage) == self.max_size:
-            self.storage[int(self.ptr)] = data
-            self.ptr = (self.ptr + 1) % self.max_size
-        else:
-            self.storage.append(data)
+        self.storage.append(data)
     
     def sample(self, batch_size):
         minibatch = random.sample(self.storage, batch_size)
@@ -84,6 +81,18 @@ class ReplayBuffer():
         states, actions, rewards, next_states, dones = torch.cat(states), torch.tensor(actions, dtype=torch.float, device=device), torch.tensor(rewards, dtype=torch.float, device=device).unsqueeze(1), torch.cat(next_states), torch.tensor(dones, dtype=torch.float, device=device).unsqueeze(1)  # cannot cat 0-D tensors, stack them to 1D. stacking states/actions to insert batch_size dim before. unsqueeze to append dim
         return states, actions, rewards, next_states, dones
 
+    def save(self, path):
+        torch.save(self.storage, path)
+        # b = np.asarray(self.storage)
+        # print(b.shape)
+        # np.save(path, b)
+
+    def load(self, path):
+        self.storage = torch.load(path)
+        # b = np.load(path, allow_pickle=True)
+        # assert(b.shape[0] == self.max_size)
+        # for i in range(b.shape[0]):
+        #     self.push(b[i])
 
 class Actor(nn.Module):
     def __init__(self, state_dim, action_dim, max_action):
@@ -178,11 +187,31 @@ class DDPG_IL(object):
         self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=1e-3, weight_decay=1e-2)
         
         self.replay_buffer = ReplayBuffer()
+        self.expert_buffer = ReplayBuffer(100000)
+        self.expert_buffer.load("logs/expert_buffer.pth")
         self.writer = SummaryWriter(directory)
         self.num_critic_update_iteration = 0
         self.num_actor_update_iteration = 0
         self.num_training = 0
         self.sum_rewards, self.a_trainLoss, self.c_trainLoss = [], [], []
+        
+        self.batch_size = env.opt.batch_size
+        self.train_loader = env.train_loader
+        self.test_loader = env.test_loader
+
+        # filling expert_buffer
+        # def normalize_data(sequence):
+        #     sequence.transpose_(0, 1)  # N2HWC -> 2NHWC
+        #     sequence.transpose_(3, 4).transpose_(2, 3) # -> 2NCHW
+        #     return [torch.tensor(x, dtype=torch.float, device=device) for x in sequence]
+        # for sequence in self.train_loader:
+        #     state, next_state = normalize_data(sequence[0])  # list of 2 tensors, each (1, 3, 64, 64), batches of states and next_states
+        #     action = sequence[1][0]  # action, list of 16 tensors, each (1, 3), action candidates for the first state transition. tensor [0] is the expert action batch
+        #     reward = 1  # SQIL reward of expert trajectory
+        #     done = 0  # cannot retrieve done from gaz_value
+        #     self.expert_buffer.push((state, action, reward, next_state, done))
+        # print(len(self.expert_buffer.storage))  # total of 10000 (s, a, r, s', d) tuples
+        # self.expert_buffer.save("logs/expert_buffer.pth")
         
     def select_action(self, state):
         # state = torch.FloatTensor(state.reshape(1, -1)).to(device)
@@ -332,13 +361,13 @@ elif args.mode == 'train':
         step = 0
         state = env.reset()
         trajectory = [state.squeeze(dim=0)]
-        actions = []
+        actions = []  # check actions taken in episode to debug
 
         # a timestep
         for t in count():
             action = agent.select_action(state)
             # action = action + exploration_noise
-            action = (action + np.random.normal(0, args.exploration_noise, size=env.action_space.shape[0])).clip(
+            action = (action + np.random.normal(0, args.exploration_noise * env.action_space.high, size=env.action_space.shape[0])).clip(
                 env.action_space.low, env.action_space.high)
             
             next_state, _, done, _ = env.step(action)

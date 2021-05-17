@@ -30,7 +30,7 @@ class Gazebo(object):
         self.seed_is_set = False
         self.d = 0
         self.skip = skip_factor
-        self.N = N
+        self.N = N  # 16 in train_value opt.num_cand
         # print(f"seq len:   {self.seq_len}")  # 6
         # print(f"skip factor:   {self.skip}")  # 10
 
