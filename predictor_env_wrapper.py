@@ -121,7 +121,21 @@ pose_network.eval()
 conv_network.eval()
 
 # --------- load a dataset -------------------
-train_data, test_data = utils.load_dataset(opt)
+from gaz_IL import Gazebo
+train_data = Gazebo(
+    data_root=opt.data_root,
+    train=True,
+    seq_len=opt.n_past+opt.n_future,
+    image_size=opt.image_width,
+    skip_factor=opt.skip_factor,
+    N=opt.num_cand)
+test_data = Gazebo(
+    data_root=opt.data_root,
+    train=False,
+    seq_len=opt.n_past+opt.n_future,
+    image_size=opt.image_width,
+    skip_factor=opt.skip_factor,
+    N=opt.num_cand)
 
 train_loader = DataLoader(train_data,
                           num_workers=opt.data_threads,

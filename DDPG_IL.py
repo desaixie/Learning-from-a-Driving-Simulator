@@ -78,7 +78,7 @@ class ReplayBuffer():
     def sample(self, batch_size):
         minibatch = random.sample(self.storage, batch_size)
         states, actions, rewards, next_states, dones = zip(*minibatch)
-        states, actions, rewards, next_states, dones = torch.cat(states), torch.tensor(actions, dtype=torch.float, device=device), torch.tensor(rewards, dtype=torch.float, device=device).unsqueeze(1), torch.cat(next_states), torch.tensor(dones, dtype=torch.float, device=device).unsqueeze(1)  # cannot cat 0-D tensors, stack them to 1D. stacking states/actions to insert batch_size dim before. unsqueeze to append dim
+        states, actions, rewards, next_states, dones = torch.cat(states).to(device), torch.tensor(action, dtype=torch.float, device=device), torch.tensor(rewards, dtype=torch.float, device=device).unsqueeze(1), torch.cat(next_states).to(device), torch.tensor(dones, dtype=torch.float, device=device).unsqueeze(1)  # cannot cat 0-D tensors, stack them to 1D. stacking states/actions to insert batch_size dim before. unsqueeze to append dim
         return states, actions, rewards, next_states, dones
 
     def save(self, path):
@@ -195,23 +195,21 @@ class DDPG_IL(object):
         self.num_training = 0
         self.sum_rewards, self.a_trainLoss, self.c_trainLoss = [], [], []
         
-        self.batch_size = env.opt.batch_size
+        self.batch_size = args.batch_size
         self.train_loader = env.train_loader
         self.test_loader = env.test_loader
 
-        # filling expert_buffer
-        # def normalize_data(sequence):
-        #     sequence.transpose_(0, 1)  # N2HWC -> 2NHWC
-        #     sequence.transpose_(3, 4).transpose_(2, 3) # -> 2NCHW
-        #     return [torch.tensor(x, dtype=torch.float, device=device) for x in sequence]
+        # # filling expert_buffer
         # for sequence in self.train_loader:
-        #     state, next_state = normalize_data(sequence[0])  # list of 2 tensors, each (1, 3, 64, 64), batches of states and next_states
-        #     action = sequence[1][0]  # action, list of 16 tensors, each (1, 3), action candidates for the first state transition. tensor [0] is the expert action batch
+        #     state, action, next_state, done = sequence  # (s, a, s', d) tuple of a whole trajectory
+        #     state, action, next_state, done = state.squeeze(0), action.squeeze(0), next_state.squeeze(0), done.squeeze(0)  # removing batch dim
         #     reward = 1  # SQIL reward of expert trajectory
-        #     done = 0  # cannot retrieve done from gaz_value
-        #     self.expert_buffer.push((state, action, reward, next_state, done))
-        # print(len(self.expert_buffer.storage))  # total of 10000 (s, a, r, s', d) tuples
+        #     traj_len = len(state)
+        #     for i in range(traj_len):
+        #         # self.expert_buffer.push((torch.tensor(state[i], dtype=torch.float), torch.tensor(action[i], dtype=torch.float), reward, torch.tensor(next_state[i], dtype=torch.float), done[i]))
+        #         self.expert_buffer.push((state[i].clone(), action[i].clone(), reward, next_state[i].clone(), done[i].clone()))
         # self.expert_buffer.save("logs/expert_buffer.pth")
+        # print(f"expert_buffer len {len(self.expert_buffer.storage)}")  # total of 8162 (s, a, r, s', d) tuples
         
     def select_action(self, state):
         # state = torch.FloatTensor(state.reshape(1, -1)).to(device)
@@ -225,6 +223,7 @@ class DDPG_IL(object):
         for it in range(args.update_iteration):
             # Sample replay buffer
             state, action, reward, next_state, done = self.replay_buffer.sample(args.batch_size)
+            e_state, e_action, e_reward, e_next_state, e_done = self.expert_buffer.sample(args.batch_size)
             done = 1-done  # 0 if done (so multiply done = 0 below), 1 else
             
             # train critic. Q(s,a) critic is only used to train the actor
