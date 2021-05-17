@@ -72,13 +72,15 @@ class ReplayBuffer():
     
     def push(self, data):
         """ data: tuple of (state, action, reward, next_state, done)
-            state, next_state are GPU tensors, the rest are scalar, floats"""
-        self.storage.append(data)
+            state, next_state are batch_size=1 tensors, the rest are scalar, floats"""
+        self.storage.append([d if torch.is_tensor(d) else torch.tensor(d, dtype=torch.float) for d in data])
     
     def sample(self, batch_size):
         minibatch = random.sample(self.storage, batch_size)
         states, actions, rewards, next_states, dones = zip(*minibatch)
-        states, actions, rewards, next_states, dones = torch.cat(states).to(device), torch.tensor(action, dtype=torch.float, device=device), torch.tensor(rewards, dtype=torch.float, device=device).unsqueeze(1), torch.cat(next_states).to(device), torch.tensor(dones, dtype=torch.float, device=device).unsqueeze(1)  # cannot cat 0-D tensors, stack them to 1D. stacking states/actions to insert batch_size dim before. unsqueeze to append dim
+        # states, actions, rewards, next_states, dones = torch.cat(states).to(device), torch.tensor(actions, dtype=torch.float, device=device), torch.tensor(rewards, dtype=torch.float, device=device).unsqueeze(1), torch.cat(next_states).to(device), torch.tensor(dones, dtype=torch.float, device=device).unsqueeze(1)  # cannot cat 0-D tensors, stack them to 1D. stacking states/actions to insert batch_size dim before. unsqueeze to append dim
+        # stacking actions, rewards, dones which have no 0th batch dim; cating states, which have
+        states, actions, rewards, next_states, dones = torch.cat(states).to(device), torch.stack(actions).to(device), torch.stack(rewards).unsqueeze(1).to(device), torch.cat(next_states).to(device), torch.stack(dones).unsqueeze(1).to(device)  # cannot cat 0-D tensors, stack them to 1D. stacking states/actions to insert batch_size dim before. unsqueeze to append dim
         return states, actions, rewards, next_states, dones
 
     def save(self, path):
@@ -207,7 +209,7 @@ class DDPG_IL(object):
         #     traj_len = len(state)
         #     for i in range(traj_len):
         #         # self.expert_buffer.push((torch.tensor(state[i], dtype=torch.float), torch.tensor(action[i], dtype=torch.float), reward, torch.tensor(next_state[i], dtype=torch.float), done[i]))
-        #         self.expert_buffer.push((state[i].clone(), action[i].clone(), reward, next_state[i].clone(), done[i].clone()))
+        #         self.expert_buffer.push((state[i].clone().unsqueeze(0), action[i].clone(), reward, next_state[i].clone().unsqueeze(0), done[i].clone()))
         # self.expert_buffer.save("logs/expert_buffer.pth")
         # print(f"expert_buffer len {len(self.expert_buffer.storage)}")  # total of 8162 (s, a, r, s', d) tuples
         
@@ -225,11 +227,13 @@ class DDPG_IL(object):
             state, action, reward, next_state, done = self.replay_buffer.sample(args.batch_size)
             e_state, e_action, e_reward, e_next_state, e_done = self.expert_buffer.sample(args.batch_size)
             done = 1-done  # 0 if done (so multiply done = 0 below), 1 else
+            e_done = 1-e_done
+            full_state, full_action, full_reward, full_next_state, full_done = torch.cat([state, e_state]), torch.cat([action, e_action]), torch.cat([reward, e_reward]), torch.cat([next_state, e_next_state]), torch.cat([done, e_done])
             
-            # train critic. Q(s,a) critic is only used to train the actor
-            target_Q = self.critic_target(next_state, self.actor_target(next_state))
-            target_Q = reward + (done * args.gamma * target_Q).detach()
-            current_Q = self.critic(state, action)
+            # train critic with half policy samples half expert samples. Q(s,a) critic is only used to train the actor
+            target_Q = self.critic_target(full_next_state, self.actor_target(full_next_state))
+            target_Q = full_reward + (full_done * args.gamma * target_Q).detach()
+            current_Q = self.critic(full_state, full_action)
             
             critic_loss = F.mse_loss(current_Q, target_Q)
             self.writer.add_scalar('Loss/critic_loss', critic_loss, global_step=self.num_critic_update_iteration)
@@ -239,6 +243,7 @@ class DDPG_IL(object):
             self.c_trainLoss.append(critic_loss.item())
             
             # train actor
+            # TODO how to train actor with SQIL?
             actor_loss = -self.critic(state, self.actor(state)).mean()  # critic acts as the loss function.
             # TODO WHY NEGATIVE??
             self.writer.add_scalar('Loss/actor_loss', actor_loss, global_step=self.num_actor_update_iteration)

@@ -5,6 +5,7 @@ wget-log*
 future_image_similarity/data/lab*
 future_image_similarity/data/sim*
 expDDPG*
+logs/expert_buffer.pth
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
