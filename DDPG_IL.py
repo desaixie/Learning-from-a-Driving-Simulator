@@ -213,7 +213,6 @@ class DDPG_IL(object):
         # print(f"expert_buffer len {len(self.expert_buffer.storage)}")  # total of 8162 (s, a, r, s', d) tuples
         
     def select_action(self, state):
-        # state = torch.FloatTensor(state.reshape(1, -1)).to(device)
         self.actor.eval()
         with torch.no_grad():
             return self.actor(state).cpu().data.numpy().flatten()
@@ -245,6 +244,7 @@ class DDPG_IL(object):
             # train actor
             actor_loss = -self.critic(full_state, self.actor(full_state)).mean()  # critic acts as the loss function.
             # TODO WHY NEGATIVE??
+            # TODO only run 5 timesteps in model
             self.writer.add_scalar('Loss/actor_loss', actor_loss, global_step=self.num_actor_update_iteration)
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
