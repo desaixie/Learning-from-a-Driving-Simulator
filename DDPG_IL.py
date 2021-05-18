@@ -42,7 +42,10 @@ parser.add_argument('--exploration_noise', default=0.1, type=float)
 parser.add_argument('--max_episode', default=1000, type=int) # num of games
 parser.add_argument('--print_log', default=5, type=int)
 parser.add_argument('--update_iteration', default=200, type=int)
+parser.add_argument('--max_grad_norm', default=5, type=int)
 args = parser.parse_args()
+print(args)
+
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 script_name = os.path.basename(__file__)
@@ -57,7 +60,8 @@ state_dim = env.observation_space.shape
 action_dim = env.action_space.shape[0]
 max_action = torch.tensor(env.action_space.high, dtype=torch.float, device=device)
 
-directory = './logs/exp' + script_name + "DreamGazebo" +'./'
+now = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+directory = './logs/exp' + script_name + "DreamGazebo/" + now + "/"
 
 class ReplayBuffer():
     """
@@ -78,23 +82,15 @@ class ReplayBuffer():
     def sample(self, batch_size):
         minibatch = random.sample(self.storage, batch_size)
         states, actions, rewards, next_states, dones = zip(*minibatch)
-        # states, actions, rewards, next_states, dones = torch.cat(states).to(device), torch.tensor(actions, dtype=torch.float, device=device), torch.tensor(rewards, dtype=torch.float, device=device).unsqueeze(1), torch.cat(next_states).to(device), torch.tensor(dones, dtype=torch.float, device=device).unsqueeze(1)  # cannot cat 0-D tensors, stack them to 1D. stacking states/actions to insert batch_size dim before. unsqueeze to append dim
         # stacking actions, rewards, dones which have no 0th batch dim; cating states, which have
         states, actions, rewards, next_states, dones = torch.cat(states).to(device), torch.stack(actions).to(device), torch.stack(rewards).unsqueeze(1).to(device), torch.cat(next_states).to(device), torch.stack(dones).unsqueeze(1).to(device)  # cannot cat 0-D tensors, stack them to 1D. stacking states/actions to insert batch_size dim before. unsqueeze to append dim
         return states, actions, rewards, next_states, dones
 
     def save(self, path):
         torch.save(self.storage, path)
-        # b = np.asarray(self.storage)
-        # print(b.shape)
-        # np.save(path, b)
 
     def load(self, path):
         self.storage = torch.load(path)
-        # b = np.load(path, allow_pickle=True)
-        # assert(b.shape[0] == self.max_size)
-        # for i in range(b.shape[0]):
-        #     self.push(b[i])
 
 class Actor(nn.Module):
     def __init__(self, state_dim, action_dim, max_action):
@@ -192,6 +188,9 @@ class DDPG_IL(object):
         self.expert_buffer = ReplayBuffer(100000)
         self.expert_buffer.load("logs/expert_buffer.pth")
         self.writer = SummaryWriter(directory)
+        # $ tensorboard --logdir='logs/expDDPG_IL.pyDreamGazebo.' --port=16007 &  # on server
+        # $ ssh -NfL 16007:localhost:16007 desaixie@40.117.41.247 -i ~/.ssh/Azure-gpu_key_0416.pem  # local machine
+        # visit http://localhost:16007/ on local machine
         self.num_critic_update_iteration = 0
         self.num_actor_update_iteration = 0
         self.num_training = 0
@@ -239,16 +238,17 @@ class DDPG_IL(object):
             self.writer.add_scalar('Loss/critic_loss', critic_loss, global_step=self.num_critic_update_iteration)
             self.critic_optimizer.zero_grad()
             critic_loss.backward()
+            nn.utils.clip_grad_norm_(self.critic.parameters(), args.max_grad_norm)
             self.critic_optimizer.step()
             self.c_trainLoss.append(critic_loss.item())
             
             # train actor
-            # TODO how to train actor with SQIL?
-            actor_loss = -self.critic(state, self.actor(state)).mean()  # critic acts as the loss function.
+            actor_loss = -self.critic(full_state, self.actor(full_state)).mean()  # critic acts as the loss function.
             # TODO WHY NEGATIVE??
             self.writer.add_scalar('Loss/actor_loss', actor_loss, global_step=self.num_actor_update_iteration)
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
+            nn.utils.clip_grad_norm_(self.actor.parameters(), args.max_grad_norm)
             self.actor_optimizer.step()
             self.a_trainLoss.append(actor_loss.item())
             
@@ -391,12 +391,10 @@ elif args.mode == 'train':
         agent.update()  # train agent at the end of the episode
         print("Episode {}, length: {} timesteps, reward: {:.1f}, moving average reward: {:.1f}, time used: {:.1f}".format(
                 i, step, total_reward, np.mean(agent.sum_rewards[-10:]), time.time() - start_time))
-        if i % 5 == 0:
-            agent.plot_trajectory(trajectory, i)
-            print("")
         
         if i % args.log_interval == 0:
             agent.save()
+            agent.plot_trajectory(trajectory, i)
     agent.plot()
 else:
     raise NameError("mode wrong!!!")

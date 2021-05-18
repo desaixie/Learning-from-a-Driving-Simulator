@@ -4,8 +4,10 @@ Report*
 wget-log*
 future_image_similarity/data/lab*
 future_image_similarity/data/sim*
-expDDPG*
 logs/expert_buffer.pth
+logs/expDDPG.pyCarRacing-v0./
+logs/expDDPG.pyHalfCheetahMuJoCoEnv-v0./
+logs/expDDPG.pyInvertedPendulumMuJoCoEnv-v0./
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
