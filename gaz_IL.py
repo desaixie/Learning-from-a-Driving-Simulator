@@ -16,6 +16,7 @@ class Gazebo(object):
 
     def __init__(self, data_root, train=True, seq_len=2, image_size=64, skip_factor=10, N=20):
         self.root_dir = data_root
+        self.train = train
         if train:
             self.data_dir = os.path.join(self.root_dir, 'train')
             self.ordered = False
@@ -34,17 +35,28 @@ class Gazebo(object):
         self.N = N  # 16 in train_value opt.num_cand
         # print(f"seq len:   {self.seq_len}")  # 6
         # print(f"skip factor:   {self.skip}")  # 10
-
-    def set_seed(self, seed):
-        if not self.seed_is_set:
-            self.seed_is_set = True
-            np.random.seed(seed)
-          
+        
     def __len__(self):
         return len(self.dirs)
     
+    def svg_gen_diff_pose_value(self, curr_angle, R):
+        """
+         current angle the robot is facing
+         Radius of the expert action, R = sqrt(dx**2 + dy**2)
+         returns random action with the same R and a random angle difference theta
+        """
+        max_angle = 0.17453292519943295 * 3. #10*(pi/180) * 3
+        theta = np.random.uniform(-max_angle, max_angle)
+        dx = R*cos(curr_angle + theta)
+        dy = R*sin(curr_angle + theta)
+        d_phi = theta
+        return dx,dy,d_phi
+    
     def load_odom(self, dir, skip):
         diff_pose_exp = []
+        if not self.train:
+            """returns action candidates instead of only the expert action"""
+            action_candidate = []
         with open(os.path.join(dir, dir.split('/')[-1]+'_odom.txt'), 'r') as f:
             lines = f.read().split('\n')
             # print(f"len {len(lines)} skip {skip}")
@@ -76,6 +88,16 @@ class Gazebo(object):
                     d_angle = d_angle_temp
 
                 diff_pose_exp.append(torch.tensor([d_px_exp, d_py_exp, d_angle], dtype=torch.float))
+                if not self.train:
+                    candidates = []
+                    for k in range(self.N):
+                        if k == 0:
+                            dx, dy, d_phi = d_px_exp, d_py_exp, d_angle
+                        else:
+                            dx, dy, d_phi = self.svg_gen_diff_pose_value(angle, d_p_exp)
+        
+                        candidates.append(torch.tensor([dx, dy, d_phi], dtype=torch.float))
+                    action_candidate.append(candidates)
                 # for k in range(num_cand):
                 #     if k == 0:
                 #         dx, dy, d_phi = d_px_exp, d_py_exp, d_angle
@@ -86,11 +108,16 @@ class Gazebo(object):
                 #     diff_pose_exp.append(torch.FloatTensor([d_px_exp, d_py_exp, d_angle]))
                 #     val_pose.append(torch.FloatTensor([abs(d_angle - d_phi)]))
 
-        return diff_pose_exp
+        if self.train:
+            return diff_pose_exp
+        else:
+            return action_candidate
 
     def __getitem__(self, index):
         '''
         Outputs:
+        train: expert actions
+        test: expert actions + random actions with the same distance, within some random angle < +- 30 deg
         
         '''
     

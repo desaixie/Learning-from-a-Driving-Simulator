@@ -87,7 +87,7 @@ decoder = saved_model['decoder']
 pose_network = saved_model['pose_network']
 conv_network = saved_model['conv_network']
 
-from models.model_value import ModelValue
+from models.value_network import ModelValue
 value_network = ModelValue()
 value_network.apply(utils.init_weights)
 

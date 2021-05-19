@@ -121,7 +121,7 @@ pose_network.eval()
 conv_network.eval()
 
 # --------- load a dataset -------------------
-from gaz_IL import Gazebo
+from gaz_IL import Gazebo  # Custom Gazebo dataloader
 train_data = Gazebo(
     data_root=opt.data_root,
     train=True,
@@ -214,6 +214,7 @@ class DreamGazeboEnv():
     
     def reset(self):
         """Randomly restart the environment to initial state of a training trajectory, return state, set corresponding episode length"""
+        # TODO sample a trajectory from dataloader
         traj_id = random.randrange(len(self.lengths))
         # predictor for Gazebo is trained with seq_len = 5+1, skip = 10.
         self.episode_len = self.lengths[traj_id] // 10  # divide by skip_factor=10

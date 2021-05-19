@@ -43,6 +43,7 @@ parser.add_argument('--max_episode', default=1000, type=int) # num of games
 parser.add_argument('--print_log', default=5, type=int)
 parser.add_argument('--update_iteration', default=200, type=int)
 parser.add_argument('--max_grad_norm', default=5, type=int)
+parser.add_argument('--max_timestep', default=7, type=int)  # 7 because model starts to predict invalid future images start aroung t=7
 args = parser.parse_args()
 print(args)
 
@@ -244,7 +245,6 @@ class DDPG_IL(object):
             # train actor
             actor_loss = -self.critic(full_state, self.actor(full_state)).mean()  # critic acts as the loss function.
             # TODO WHY NEGATIVE??
-            # TODO only run 5 timesteps in model
             self.writer.add_scalar('Loss/actor_loss', actor_loss, global_step=self.num_actor_update_iteration)
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
@@ -349,14 +349,17 @@ elif args.mode == 'train':
     total_step = 0
     # initialize ReplayBuffer
     state = env.reset()  # (1, 64, 64, 3)
-    for i in range(args.batch_size):
+    t_ = 0
+    for i in range(args.batch_size):  # initialize replay_buffer with random policy
         action = env.action_space.sample()
         next_state, _, done, _ = env.step(action)
         reward = 0  # SQIL reward
         agent.replay_buffer.push((state, action, reward, next_state, np.float(done)))
         state = next_state
-        if done:
+        t_ += 1
+        if done or t_ == args.max_timestep:
             state = env.reset()
+            t_ = 0
             
     # run episodes
     for i in range(args.max_episode):
@@ -364,6 +367,7 @@ elif args.mode == 'train':
         total_reward = 0
         step = 0
         state = env.reset()
+        # TODO running n on-policy trajectories at the same time. Prob won't help since it's IL
         trajectory = [state.squeeze(dim=0)]
         actions = []  # check actions taken in episode to debug
 
@@ -381,7 +385,7 @@ elif args.mode == 'train':
             state = next_state
             trajectory.append(state.squeeze(dim=0))  # remove batch dimension to be plotted
             actions.append(action)
-            if done:
+            if done or t >= args.max_timestep:
                 break
             step += 1
             total_reward += reward
