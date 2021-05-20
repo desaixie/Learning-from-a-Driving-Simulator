@@ -1,10 +1,11 @@
+# imported from https://github.com/Sleepwalking/pytorch-softdtw
 import numpy as np
 import torch
-from numba import jit
+# from numba import jit
 from torch.autograd import Function
 
 
-@jit(nopython=True)
+# @jit(nopython=True)
 def compute_softdtw(D, gamma):
     B = D.shape[0]
     N = D.shape[1]
@@ -24,7 +25,7 @@ def compute_softdtw(D, gamma):
     return R
 
 
-@jit(nopython=True)
+# @jit(nopython=True)
 def compute_softdtw_backward(D_, R, gamma):
     B = D_.shape[0]
     N = D_.shape[1]
@@ -90,12 +91,13 @@ class SoftDTW(torch.nn.Module):
         return dist
     
     def forward(self, x, y=None):
-        assert len(x.shape) == len(y.shape)
         squeeze = False
-        if len(x.shape) < 3:
-            x = x.unsqueeze(0)
-            y = y.unsqueeze(0)
-            squeeze = True
+        if y:
+            assert len(x.shape) == len(y.shape)
+            if len(x.shape) < 3:
+                x = x.unsqueeze(0)
+                y = y.unsqueeze(0)
+                squeeze = True
         if y is None:
             """If y is not given, assume x is the distance matrix between x and y"""
             D_xy = x

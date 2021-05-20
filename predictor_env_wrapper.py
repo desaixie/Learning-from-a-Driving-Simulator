@@ -13,6 +13,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
+import torch.multiprocessing
+torch.multiprocessing.set_sharing_strategy('file_system') # https://github.com/pytorch/pytorch/issues/11201#issuecomment-421146936
 
 import future_image_similarity.utils as utils
 
@@ -220,24 +222,26 @@ class DreamGazeboEnv():
         self.episode_len = self.lengths[traj_id] // 10  # divide by skip_factor=10
         d = train_data.dirs[traj_id]
         fname = os.path.join(d, 'rgb', 'frame'+str(0).zfill(6)+'.jpg')  # the first image in trajectory
-        im = np.asarray(PIL.Image.open(fname)).reshape((1, 64, 64, 3))  # PIL.Image.open read in RGB order
+        with PIL.Image.open(fname) as im:
+            img = np.asarray(im).reshape((1, 64, 64, 3))  # PIL.Image.open read in RGB order. Use with so file is closed!
         # im = imread(fname).reshape(1, 64, 64, 3)  # cv2.imread reads in BGR order
-        self.state = torch.tensor(im / 255., dtype=torch.float, device=device).permute(0, 3, 1, 2)  # make state ready to passed into encoder
+        self.state = torch.tensor(img / 255., dtype=torch.float, device=device).permute(0, 3, 1, 2)  # make state ready to passed into encoder
         return self.state
-    
+
     def step(self, action):
         """Step in the state-transition model given action, returns next_state, reward, done, info"""
         action = torch.tensor(action, dtype=torch.float, device=device)
         # initialize the hidden state.
         with torch.no_grad():
             self.prior.hidden = prior.init_hidden(batch_size=1)  # https://stackoverflow.com/a/58177979/8667103
-
+            # TODO why initialize everytime?
+        
             h_conv = self.encoder(self.state)
             h_conv, skip = h_conv
             h = h_conv.view(-1, 4*opt.g_dim)
             z_t, _, _ = self.prior(h)
             z_t = z_t.view(-1, int(opt.z_dim/4), 2, 2)
-
+        
             z_d = self.pose_network(action).detach()
             h_pred = self.conv_network(torch.cat([h_conv, z_t, z_d], 1)).detach()
             x_pred = self.decoder([h_pred, skip]).detach()
@@ -246,9 +250,28 @@ class DreamGazeboEnv():
         done = False
         if self.episode_len == 0:
             done = True
-
+    
         # reward function design depend on the applied Imitation Learning algorithm
         return self.state, None, done, None
+    
+    def predict(self, state, action):
+        """Predicts next state, given action"""
+        action = torch.tensor(action, dtype=torch.float, device=device)
+        # initialize the hidden state.
+        with torch.no_grad():
+            self.prior.hidden = prior.init_hidden(batch_size=1)  # https://stackoverflow.com/a/58177979/8667103
+
+            h_conv = self.encoder(state)
+            h_conv, skip = h_conv
+            h = h_conv.view(-1, 4*opt.g_dim)
+            z_t, _, _ = self.prior(h)
+            z_t = z_t.view(-1, int(opt.z_dim/4), 2, 2)
+
+            z_d = self.pose_network(action).detach()
+            h_pred = self.conv_network(torch.cat([h_conv, z_t, z_d], 1)).detach()
+            x_pred = self.decoder([h_pred, skip]).detach()
+
+        return x_pred
     
     def render(self):
         raise Exception("render is not supported")

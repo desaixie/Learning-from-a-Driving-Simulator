@@ -4,11 +4,13 @@ import numpy as np
 import torch
 
 import copy
-from PIL import Image
+import PIL.Image
 # from scipy.misc import imread
 from cv2 import imread
 from math import pi, atan2, sqrt, cos, sin
 from numpy import sign
+
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 class Gazebo(object):
     
@@ -96,8 +98,9 @@ class Gazebo(object):
                         else:
                             dx, dy, d_phi = self.svg_gen_diff_pose_value(angle, d_p_exp)
         
-                        candidates.append(torch.tensor([dx, dy, d_phi], dtype=torch.float))
-                    action_candidate.append(candidates)
+                        candidates.append(torch.tensor([dx, dy, d_phi], dtype=torch.float))  # don't make tensors on GPU
+                        # Since dataloader is multiprocess, making tensors on GPU here would cause https://github.com/pytorch/pytorch/issues/40403
+                    action_candidate.append(torch.stack(candidates))
                 # for k in range(num_cand):
                 #     if k == 0:
                 #         dx, dy, d_phi = d_px_exp, d_py_exp, d_angle
@@ -128,8 +131,9 @@ class Gazebo(object):
         num_files = len(os.listdir(os.path.join(d, 'rgb')))
         for i in range(0, num_files, skip):
             fname = os.path.join(d, 'rgb', 'frame'+str(i).zfill(6)+'.jpg')
-            im = imread(fname).reshape(1, 64, 64, 3)
-            im = np.moveaxis(im, 3, 1)  # move C dim
+            with PIL.Image.open(fname) as im:
+                img = np.asarray(im).reshape(1, 64, 64, 3)
+            im = np.moveaxis(img, 3, 1)  # move C dim
             states.append(im/255.)
         next_states = copy.deepcopy(states)
         states.pop(-1)
@@ -138,6 +142,7 @@ class Gazebo(object):
         next_states = np.concatenate(next_states, axis=0)
     
         actions = self.load_odom(d, skip)
+        # if self.train:
         actions = torch.stack(actions)
     
         dones = torch.zeros(len(states))

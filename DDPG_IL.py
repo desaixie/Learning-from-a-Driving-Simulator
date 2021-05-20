@@ -270,11 +270,11 @@ class DDPG_IL(object):
         # print("Model has been saved...")
         # print("====================================")
     
-    def load(self):
-        self.actor.load_state_dict(torch.load(directory + 'actor.pth'))
-        self.critic.load_state_dict(torch.load(directory + 'critic.pth'))
+    def load(self, path):
+        self.actor.load_state_dict(torch.load(path + 'actor.pth'))
+        self.critic.load_state_dict(torch.load(path + 'critic.pth'))
         print("====================================")
-        print("model has been loaded...")
+        print("model has been loaded from " + path)
         print("====================================")
         
     def plot(self):
@@ -326,82 +326,84 @@ class DDPG_IL(object):
         fname = f"logs/trajectory/DDPG_IL/{episode}.png"
         utils.save_tensors_image(fname, to_plot)
 
-# def main():
-agent = DDPG_IL(state_dim, action_dim, max_action)
-ep_r = 0
-if args.mode == 'test':
-    agent.load()
-    for i in range(args.test_iteration):
-        state = env.reset()
-        for t in count():
-            action = agent.select_action(state)
-            next_state, reward, done, info = env.step(np.float32(action))
-            ep_r += reward
-            env.render()
-            if done or t >= args.max_length_of_trajectory:
-                print("Ep_i \t{}, the ep_r is \t{:0.2f}, the step is \t{}".format(i, ep_r, t))
-                ep_r = 0
-                break
-            state = next_state
-
-elif args.mode == 'train':
-    if args.load: agent.load()
-    total_step = 0
-    # initialize ReplayBuffer
-    state = env.reset()  # (1, 64, 64, 3)
-    t_ = 0
-    for i in range(args.batch_size):  # initialize replay_buffer with random policy
-        action = env.action_space.sample()
-        next_state, _, done, _ = env.step(action)
-        reward = 0  # SQIL reward
-        agent.replay_buffer.push((state, action, reward, next_state, np.float(done)))
-        state = next_state
-        t_ += 1
-        if done or t_ == args.max_timestep:
+def main():
+    agent = DDPG_IL(state_dim, action_dim, max_action)
+    ep_r = 0
+    if args.mode == 'test':
+        agent.load()
+        for i in range(args.test_iteration):
             state = env.reset()
-            t_ = 0
-            
-    # run episodes
-    for i in range(args.max_episode):
-        start_time = time.time()
-        total_reward = 0
-        step = 0
-        state = env.reset()
-        # TODO running n on-policy trajectories at the same time. Prob won't help since it's IL
-        trajectory = [state.squeeze(dim=0)]
-        actions = []  # check actions taken in episode to debug
+            for t in count():
+                action = agent.select_action(state)
+                next_state, reward, done, info = env.step(np.float32(action))
+                ep_r += reward
+                env.render()
+                if done or t >= args.max_length_of_trajectory:
+                    print("Ep_i \t{}, the ep_r is \t{:0.2f}, the step is \t{}".format(i, ep_r, t))
+                    ep_r = 0
+                    break
+                state = next_state
 
-        # a timestep
-        for t in count():
-            action = agent.select_action(state)
-            # action = action + exploration_noise
-            action = (action + np.random.normal(0, args.exploration_noise * env.action_space.high, size=env.action_space.shape[0])).clip(
-                env.action_space.low, env.action_space.high)
-            
+    elif args.mode == 'train':
+        if args.load: agent.load()
+        total_step = 0
+        # initialize ReplayBuffer
+        state = env.reset()  # (1, 64, 64, 3)
+        t_ = 0
+        for i in range(args.batch_size):  # initialize replay_buffer with random policy
+            action = env.action_space.sample()
             next_state, _, done, _ = env.step(action)
-            if args.render and i >= args.render_interval : env.render()
             reward = 0  # SQIL reward
             agent.replay_buffer.push((state, action, reward, next_state, np.float(done)))
             state = next_state
-            trajectory.append(state.squeeze(dim=0))  # remove batch dimension to be plotted
-            actions.append(action)
-            if done or t >= args.max_timestep:
-                break
-            step += 1
-            total_reward += reward
-            
-        total_step += step+1
-        agent.sum_rewards.append(total_reward)
-        agent.update()  # train agent at the end of the episode
-        print("Episode {}, length: {} timesteps, reward: {:.1f}, moving average reward: {:.1f}, time used: {:.1f}".format(
-                i, step, total_reward, np.mean(agent.sum_rewards[-10:]), time.time() - start_time))
-        
-        if i % args.log_interval == 0:
-            agent.save()
-            agent.plot_trajectory(trajectory, i)
-    agent.plot()
-else:
-    raise NameError("mode wrong!!!")
+            t_ += 1
+            if done or t_ == args.max_timestep:
+                state = env.reset()
+                t_ = 0
+                
+        # run episodes
+        for i in range(args.max_episode):
+            start_time = time.time()
+            total_reward = 0
+            step = 0
+            state = env.reset()
+            # TODO running n on-policy trajectories at the same time. Prob won't help since it's IL
+            trajectory = [state.squeeze(dim=0)]
+            actions = []  # check actions taken in episode to debug
 
-# if __name__ == '__main__':
-#     main()
+            # a timestep
+            for t in count():
+                action = agent.select_action(state)
+                # action = action + exploration_noise
+                action = (action + np.random.normal(0, args.exploration_noise * env.action_space.high, size=env.action_space.shape[0])).clip(
+                    env.action_space.low, env.action_space.high)
+                
+                next_state, _, done, _ = env.step(action)
+                if args.render and i >= args.render_interval : env.render()
+                reward = 0  # SQIL reward
+                agent.replay_buffer.push((state, action, reward, next_state, np.float(done)))
+                state = next_state
+                trajectory.append(state.squeeze(dim=0))  # remove batch dimension to be plotted
+                actions.append(action)
+                if done or t >= args.max_timestep:
+                    break
+                step += 1
+                total_reward += reward
+                
+            total_step += step+1
+            agent.sum_rewards.append(total_reward)
+            agent.update()  # train agent at the end of the episode
+            print("Episode {}, length: {} timesteps, reward: {:.1f}, moving average reward: {:.1f}, time used: {:.1f}".format(
+                    i, step, total_reward, np.mean(agent.sum_rewards[-10:]), time.time() - start_time))
+            
+            if i % args.log_interval == 0:
+                agent.save()
+                agent.plot_trajectory(trajectory, i)
+        agent.plot()
+    else:
+        raise NameError("mode wrong!!!")
+
+
+if __name__ == '__main__':
+    main()
+    
