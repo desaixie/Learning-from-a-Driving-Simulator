@@ -1,5 +1,5 @@
 # Learning-from-a-Driving-Simulator
-## Zero-shot Model-based Imitation Learning with Partial Trajectory and Sparse Rewards
+## Zero-trial Model-based Imitation Learning with Partial Trajectory
 
 ### Abstract
 In this project, I attempt to apply Imitation Learning (IL) to train an agent to tackle the planning problem in Autonomous Driving (AD).  
