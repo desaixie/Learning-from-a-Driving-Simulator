@@ -23,4 +23,5 @@ class MBC_Agent():
         best_pose_idx = torch.argmax(-value)
         delta_pose = candidates[best_pose_idx]
         return delta_pose
+    
 
