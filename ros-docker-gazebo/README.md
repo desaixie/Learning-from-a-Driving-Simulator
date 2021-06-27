@@ -1,3 +1,19 @@
+To use my image, which I built on this and also installed turtlebot3, first pull my image
+```
+docker pull xiedesaidocker/ros-kinetic-gazebo7-turtlebot3-nvidia-docker:1.0
+```
+Then, make the script executable 
+```
+chmod + launch_docker.sh
+``` 
+and run the script
+```
+sudo ./launch_docker.sh
+```  
+The launch script `launch_docker.sh` creates a container called `ros-kinetic-gazebo7dev` (if not existing), starts the container (if stopped), and opens a new terminal from this container. 
+
+The following is the original README.md file. 
+
 # ROS Kinetic + Gazebo on Docker HOWTO
 
 This tutorial is focused on those people that have Ubuntu 14.04 + ROS Indigo and they want to run Gazebo 7 or later.
