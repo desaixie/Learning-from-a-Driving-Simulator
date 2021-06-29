@@ -12,6 +12,8 @@ sudo ./launch_docker.sh
 ```  
 The launch script `launch_docker.sh` creates a container called `ros-kinetic-gazebo7dev` (if not existing), starts the container (if stopped), and opens a new terminal from this container. 
 
+To use nvidia-docker on WSL2, follow [this](https://docs.nvidia.com/cuda/wsl-user-guide/index.html) guide.
+
 The following is the original README.md file. 
 
 # ROS Kinetic + Gazebo on Docker HOWTO
