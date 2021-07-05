@@ -174,7 +174,7 @@ class Critic(nn.Module):
         return x
 
 
-class DDPG_IL(object):
+class DDPG_SQIL(object):
     def __init__(self, state_dim, action_dim, max_action):
         self.actor = Actor(state_dim, action_dim, max_action).to(device)
         self.actor_target = Actor(state_dim, action_dim, max_action).to(device)
@@ -323,11 +323,11 @@ class DDPG_IL(object):
                     break
             if len(row) == ncol:  # discard row not filled
                 to_plot.append(row)
-        fname = f"logs/trajectory/DDPG_IL/{episode}.png"
+        fname = f"logs/trajectory/DDPG_SQIL/{episode}.png"
         utils.save_tensors_image(fname, to_plot)
 
 def main():
-    agent = DDPG_IL(state_dim, action_dim, max_action)
+    agent = DDPG_SQIL(state_dim, action_dim, max_action)
     ep_r = 0
     if args.mode == 'test':
         agent.load()

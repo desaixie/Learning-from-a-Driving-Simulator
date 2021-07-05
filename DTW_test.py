@@ -1,13 +1,13 @@
 """
 Run five DTW tests with the trained agents repeatively select on-policy actions in DreamGazeboEnv
-First three are three DDPG_IL models trained differently
+First three are three DDPG_SQIL models trained differently
 Last two are MBC, including expert action in candidates or not
 """
 import torch
 from soft_dtw import SoftDTW
 from pytorch_ssim import SSIM
 from predictor_env_wrapper import DreamGazeboEnv
-from DDPG_IL import DDPG_IL
+from DDPG_SQIL import DDPG_SQIL
 from MBC import MBC_Agent
 ssim = SSIM(window_size=10)  # TODO
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -23,7 +23,7 @@ with torch.no_grad():
             state_dim = env.observation_space.shape
             action_dim = env.action_space.shape[0]
             max_action = torch.tensor(env.action_space.high, dtype=torch.float, device=device)
-            agent = DDPG_IL(state_dim, action_dim, max_action)
+            agent = DDPG_SQIL(state_dim, action_dim, max_action)
             agent.load(saved_paths[i_test])
             agent.actor.eval()
             agent.critic.eval()

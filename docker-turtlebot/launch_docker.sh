@@ -1,7 +1,7 @@
 #!/bin/bash
 xhost +local:root
 
-container_name='docker-turtlebot2dev'
+container_name='docker-turtlebotdev'
 curdir="$(pwd)"
 #workdir="$(dirname "$curdir")"  # /path/to/.../Learning-from-a-Driving-Simulator
 
@@ -20,12 +20,13 @@ nvidia-docker run -it -d \
 --volume="/etc/shadow:/etc/shadow:ro" \
 --volume="/etc/sudoers.d:/etc/sudoers.d:ro" \
 --volume="$HOME/host_docker:/home/user/host_docker" \
--v $curdir:/home/$USER/docker-turtlebot2 \
+-v $curdir:/home/$USER/docker-turtlebot \
 -e LOCAL_USER_ID=`id -u $USER` \
 -e LOCAL_GROUP_ID=`id -g $USER` \
 -e LOCAL_GROUP_NAME=`id -gn $USER` \
+-p 65432:65432 \
 --name "$container_name" \
- docker-turtlebot:test
+ xiedesaidocker/docker-turtlebot:1.0
 
 # start the container if stopped
 [[ $(docker ps -f "name=$container_name" -f status=exited --format '{{.Names}}') == $container_name ]] &&  # and instead of or here!!
