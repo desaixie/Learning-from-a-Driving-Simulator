@@ -6,7 +6,9 @@ Workflow:
 2. Save image from turtlebot's camera, respond OK
 3. Receive turtlebot command from client, translate and execute the command.
 4. Check if turtlebot location is within distance from target. If so, respond DONE; if exceeds maximum timestep, respond TIMEOUT; else, go to 2.
+5. Receive RESTART from client, reset Gazebo simulation and t=0, go to 2; if receive TERMINATE, exit.
 Since ROS Kinetic only supports Python 2.7, the following is written in Python 2.7
+When TERMINATE, close and open gazebo again with the other world file.
 """
 import socket
 import sys
@@ -24,17 +26,49 @@ try:
     conn, addr = s.accept()
     # with conn:
     print('Connected by', addr)
+
+    data = conn.recv(1024)
+    assert data == b"RESTART"
     while True:
+        t = 0  # timestep in Gazebo simulation
+        max_timestep = 30
+        target_coord = 10 # TODO read target coordinate from ROS
+        while True:
+            
+            # 2. Save image from turtlebot's camera, respond OK
+            print("image saved")
+            conn.sendall(b"OK")
+            
+            # 3. Receive turtlebot command from client, translate and execute the command.
+            data = conn.recv(1024)
+            print("received command: ", repr(data))
+            t += 1
+            
+            # 4. Check if turtlebot location is within distance from target. If so, respond DONE; if exceeds maximum timestep, respond TIMEOUT; else, go to 2.
+            coord = 0  # TODO: read turtlebot coordinate from ROS
+            if abs(target_coord - coord) < 3:
+                conn.sendall(b"DONE")
+                break
+            elif t >= max_timestep:
+                conn.sendall(b"TIMEOUT")
+                break
+
+        # 5. Receive RESTART from client, reset Gazebo simulation and t=0, go to 2; if receive TERMINATE, exit.
         data = conn.recv(1024)
-        if not data:
+        assert data in [b"RESTART", b"TERMINATE"]
+        if data == "TERMINATE":
             break
-        conn.sendall(data)
+        # TODO reset gazebo simulation
+        
+        # if not data:
+        #     break
 except:
     print("Unexpected error:", sys.exc_info()[0])
     raise
 finally:
     # Clean up the connection
     conn.close()
+print("server exited")
 
 '''
 Copyright (c) 2016, Nadya Ampilogova
