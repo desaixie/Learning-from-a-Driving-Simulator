@@ -40,8 +40,9 @@ class Gazebo(object):
         
     def __len__(self):
         return len(self.dirs)
-    
-    def svg_gen_diff_pose_value(self, curr_angle, R):
+
+    @staticmethod
+    def svg_gen_diff_pose_value(curr_angle, R):
         """
          current angle the robot is facing
          Radius of the expert action, R = sqrt(dx**2 + dy**2)
@@ -55,6 +56,7 @@ class Gazebo(object):
         return dx,dy,d_phi
     
     def load_odom(self, dir, skip):
+        """The orientation x,y,z,w are quaternions: https://answers.ros.org/question/271661/pythonhow-to-know-pose-of-turtlebot/?answer=272372#post-id-272372"""
         diff_pose_exp = []
         if not self.train:
             """returns action candidates instead of only the expert action"""
@@ -65,7 +67,7 @@ class Gazebo(object):
             for i in range(0, len(lines) - skip*9 - 1, skip*9):
                 px = float(lines[i+1].split(': ')[-1])
                 py = float(lines[i+2].split(': ')[-1])
-                oz = float(lines[i+7].split(': ')[-1])
+                oz = float(lines[i+7].split(': ')[-1])  # since we only change orientation in the horizontal plane, only oz and ow changes (ox, oy stays 0)
                 ow = float(lines[i+8].split(': ')[-1])
 
                 angle = 2*atan2(oz, ow)

@@ -12,64 +12,7 @@ When TERMINATE, close and open gazebo again with the other world file.
 """
 import socket
 import sys
-
-# HOST = '127.0.0.1'  # Standard loopback interface address (localhost)
-HOST = '0.0.0.0'  #  All interfaces, since server in run in a docker container
-PORT = 65432        # Port to listen on (non-privileged ports are > 1023)
-
-try:
-    # with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:  # does no work in python2
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.bind((HOST, PORT))
-    s.listen(1)  # python2 socket.listen requires parameter: number of max queued connect requests
-    print("listening on HOST " + HOST + ", PORT " + str(PORT))
-    conn, addr = s.accept()
-    # with conn:
-    print('Connected by', addr)
-
-    data = conn.recv(1024)
-    assert data == b"RESTART"
-    while True:
-        t = 0  # timestep in Gazebo simulation
-        max_timestep = 30
-        target_coord = 10 # TODO read target coordinate from ROS
-        while True:
-            
-            # 2. Save image from turtlebot's camera, respond OK
-            print("image saved")
-            conn.sendall(b"OK")
-            
-            # 3. Receive turtlebot command from client, translate and execute the command.
-            data = conn.recv(1024)
-            print("received command: ", repr(data))
-            t += 1
-            
-            # 4. Check if turtlebot location is within distance from target. If so, respond DONE; if exceeds maximum timestep, respond TIMEOUT; else, go to 2.
-            coord = 0  # TODO: read turtlebot coordinate from ROS
-            if abs(target_coord - coord) < 3:
-                conn.sendall(b"DONE")
-                break
-            elif t >= max_timestep:
-                conn.sendall(b"TIMEOUT")
-                break
-
-        # 5. Receive RESTART from client, reset Gazebo simulation and t=0, go to 2; if receive TERMINATE, exit.
-        data = conn.recv(1024)
-        assert data in [b"RESTART", b"TERMINATE"]
-        if data == "TERMINATE":
-            break
-        # TODO reset gazebo simulation
-        
-        # if not data:
-        #     break
-except:
-    print("Unexpected error:", sys.exc_info()[0])
-    raise
-finally:
-    # Clean up the connection
-    conn.close()
-print("server exited")
-
+import pickle
 '''
 Copyright (c) 2016, Nadya Ampilogova
 All rights reserved.
@@ -88,62 +31,117 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 # Script for simulation
 # Launch gazebo world prior to run this script
 
-# from __future__ import print_function
-# import sys
-# import rospy
-# import cv2
-# from std_msgs.msg import String
-# from sensor_msgs.msg import Image
-# from cv_bridge import CvBridge, CvBridgeError
-#
-# class TakePhoto:
-#     def __init__(self):
-#
-#         self.bridge = CvBridge()
-#         self.image_received = False
-#
-#         # Connect image topic
-#         img_topic = "/camera/rgb/image_raw"
-#         self.image_sub = rospy.Subscriber(img_topic, Image, self.callback)
-#
-#         # Allow up to one second to connection
-#         rospy.sleep(1)
-#
-#     def callback(self, data):
-#
-#         # Convert image to OpenCV format
-#         try:
-#             cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
-#         except CvBridgeError as e:
-#             print(e)
-#
-#         self.image_received = True
-#         self.image = cv_image
-#
-#     def take_picture(self, img_title):
-#         if self.image_received:
-#             # Save an image
-#             cv2.imwrite(img_title, self.image)
-#             return True
-#         else:
-#             return False
-#
-# if __name__ == '__main__':
-#
-#     # Initialize
-#     rospy.init_node('take_photo', anonymous=False)
-#     camera = TakePhoto()
-#
-#     # Take a photo
-#
-#     # Use '_image_title' parameter from command line
-#     # Default value is 'photo.jpg'
-#     img_title = rospy.get_param('~image_title', 'photo.jpg')
-#
-#     if camera.take_picture(img_title):
-#         rospy.loginfo("Saved image " + img_title)
-#     else:
-#         rospy.loginfo("No images received")
-#
-#     # Sleep to give the last log messages time to be sent
-#     rospy.sleep(1)
+from __future__ import print_function
+import sys
+import rospy
+import cv2
+from std_msgs.msg import String
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge, CvBridgeError
+
+class TakePhoto:
+    def __init__(self):
+
+        self.bridge = CvBridge()
+        self.image_received = False
+
+        # Connect image topic
+        img_topic = "/camera/rgb/image_raw"
+        self.image_sub = rospy.Subscriber(img_topic, Image, self.callback)
+
+        # Allow up to one second to connection
+        rospy.sleep(1)
+
+    def callback(self, data):
+        try:
+            cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
+            # TODO: resize from 640*480 to 64*64
+        except CvBridgeError as e:
+            print(e)
+
+        self.image_received = True
+        self.image = cv_image
+
+    def take_picture(self, img_title):
+        if self.image_received:
+            # Save an image
+            cv2.imwrite(img_title, self.image)
+            return True
+        else:
+            return False
+
+
+if __name__ == '__main__':
+    # Initialize
+    rospy.init_node('take_photo', anonymous=False)
+    camera = TakePhoto()
+
+    # Take a photo
+    img_title = 'photo.jpg'
+    if camera.take_picture(img_title):
+        rospy.loginfo("Saved image " + img_title)
+    else:
+        rospy.loginfo("No images received")
+
+    # Sleep to give the last log messages time to be sent
+    rospy.sleep(1)
+
+    # HOST = '127.0.0.1'  # Standard loopback interface address (localhost)
+    HOST = '0.0.0.0'  #  All interfaces, since server in run in a docker container
+    PORT = 65432        # Port to listen on (non-privileged ports are > 1023)
+
+    try:
+        # with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:  # does no work in python2
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind((HOST, PORT))
+        s.listen(1)  # python2 socket.listen requires parameter: number of max queued connect requests
+        print("listening on HOST " + HOST + ", PORT " + str(PORT))
+        conn, addr = s.accept()
+        # with conn:
+        print('Connected by', addr)
+
+        data = conn.recv(1024)
+        assert data == b"RESTART"
+        while True:
+            t = 0  # timestep in Gazebo simulation
+            max_timestep = 30
+            target_coord = 10 # TODO read target coordinate from ROS
+            while True:
+                
+                # 2. Save image from turtlebot's camera, respond OK
+                print("image saved")
+                conn.sendall(b"OK")
+                
+                # 3. Receive turtlebot command from client, translate and execute the command.
+                data = conn.recv(1024)
+                print("received command: ", pickle.loads(data))
+                # TODO start saving odometry data until command is done (if odom is not changing.
+                t += 1
+                
+                # 4. Check if turtlebot location is within distance from target. If so, respond DONE; if exceeds maximum timestep, respond TIMEOUT; else, go to 2.
+                coord = 0  # TODO: read turtlebot coordinate from ROS
+                # TODO also save a odom file
+                if abs(target_coord - coord) < 3:
+                    conn.sendall(b"DONE")
+                    break
+                elif t >= max_timestep:
+                    conn.sendall(b"TIMEOUT")
+                    break
+
+            # 5. Receive RESTART from client, reset Gazebo simulation and t=0, go to 2; if receive TERMINATE, exit.
+            data = conn.recv(1024)
+            assert data in [b"RESTART", b"TERMINATE"]
+            if data == "TERMINATE":
+                break
+            # TODO reset gazebo simulation
+            
+            # if not data:
+            #     break
+    except:
+        print("Unexpected error:", sys.exc_info()[0])
+        raise
+    finally:
+        # Clean up the connection
+        conn.close()
+    print("server exited")
+

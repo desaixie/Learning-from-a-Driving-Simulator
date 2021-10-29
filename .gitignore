@@ -8,6 +8,8 @@ logs/expert_buffer.pth
 logs/expDDPG.pyCarRacing-v0./
 logs/expDDPG.pyHalfCheetahMuJoCoEnv-v0./
 logs/expDDPG.pyInvertedPendulumMuJoCoEnv-v0./
+*nohup.out*
+future_image_similarity/data/dataset.zip
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

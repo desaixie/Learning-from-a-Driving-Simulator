@@ -14,6 +14,7 @@ each compute DTW scores with each of all trajectories and find min. Final score 
 DTW score is computed using the trajectory coordinates from odom.
 """
 import socket
+import pickle
 
 HOST = '127.0.0.1'  # The server's hostname or IP address
 PORT = 65432        # The port used by the server
@@ -28,7 +29,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     print(f"start test {testN}")
     testN += 1
     while True:
-        # 2. Receive OK from server, then load the image /docker-turtlebot/photo.jpg as current state s_t..
+        # 2. Receive OK from server, then load the image docker-turtlebot/photo.jpg as current state s_t..
         # 4. Receive DONE, TIMEOUT, or OK.
         data = s.recv(1024)
         assert data in [b"OK", b"DONE", b"TIMEOUT"]
@@ -49,8 +50,9 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 continue
 
         # 3. Send turtlebot command to server
-        # s.sendall(b'some command' + t.to_bytes(2, byteorder='big'))
-        s.sendall(f"some command {t}".encode("ascii"))
+        command = [1.5, 2.1, 3.7]
+        s.sendall(pickle.dumps(command, protocol=2))  # python2 only supports up to ver 2
+        # s.sendall(f"some command {t}".encode("ascii"))
         t += 1
     
 print("client exited")
