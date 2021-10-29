@@ -21,3 +21,14 @@ The rest of the `.py` files is my own work.
 - `gaz_IL.py` rewrites the `class Gazebo` custom dataset class from `future-image-similarity/data/gaz_value.py` to use the dataset collected in Gazebo in a more general way.  
 - `migrate_models.py` loads saved models from `future-image-similarity/logs` and save them with whatever pytorch version you are using.  
 - `predictor_env_wrapper.py` contains `class DreamGazeboEnv`, which wraps *MBC*'s image predictor and the dataset loaded with `gaz_IL.py` as a `Gym` environment.  
+
+### Installation
+- Clone this repository. 
+- Then download the dataset from *MBC* [here](https://drive.google.com/file/d/1BphXhW2CmJ8NlgiZ5NGJ4HKUC2xRZ8rb/view?usp=sharing) (the dataset link in from MBC is currently unavailable). Put the zip file in `future-image-similarity/data` and unzip there.
+- Install the conda environment with `conda env create -f environment.yml`.
+- Docker image for Gazebo API is not ready...
+
+### Running 
+- Run the training by `python DDPG_SQIL.py`. Expect training output to show `Episode x, length: 7 timesteps, reward: 0.0, moving average reward: 0.0, time used: 10.4`. Episodes all have length of 7 because of my `partial_traj` technique, the 0 reward is the *SQIL* on-policy reward, and each episode takes ~10s when running on a NVIDIA GTX 1060 6GB GPU.
+- Check training loss plots in real time by `tensorboard --logdir logs/expDDPG_SQIL.pyDreamGazebo`, and open the provided link in browser. You can check/uncheck runs that you want to see at the lower left corner. Remember to click the refresh button or set automatic reloading at the upper right corner.
+- Run testing by `python DTW_test.py`. Only the `dream` test mode is implemented for now.
