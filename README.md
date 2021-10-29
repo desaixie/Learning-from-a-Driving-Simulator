@@ -30,5 +30,5 @@ The rest of the `.py` files is my own work.
 
 ### Running 
 - Run the training by `python DDPG_SQIL.py`. Expect training output to show `Episode x, length: 7 timesteps, reward: 0.0, moving average reward: 0.0, time used: 10.4`. Episodes all have length of 7 because of my `partial_traj` technique, the 0 reward is the *SQIL* on-policy reward, and each episode takes ~10s when running on a NVIDIA GTX 1060 6GB GPU.
-- Check training loss plots in real time by `tensorboard --logdir logs/expDDPG_SQIL.pyDreamGazebo`, and open the provided link in browser. You can check/uncheck runs that you want to see at the lower left corner. Remember to click the refresh button or set automatic reloading at the upper right corner.
+- Check training loss plots in real time by `tensorboard --logdir logs/expDDPG_SQIL.pyDreamGazebo`, and open the provided link in browser. You can check/uncheck runs that you want to see at the lower left corner. Remember to click the refresh button or set automatic reloading at the upper right corner. Expect both loss plots of the current run to follow the `clipgrad_partialtraj` run.
 - Run testing by `python DTW_test.py`. Only the `dream` test mode is implemented for now.
