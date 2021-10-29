@@ -43,7 +43,7 @@ parser.add_argument('--max_episode', default=1000, type=int) # num of games
 parser.add_argument('--print_log', default=5, type=int)
 parser.add_argument('--update_iteration', default=200, type=int)
 parser.add_argument('--max_grad_norm', default=5, type=int)
-parser.add_argument('--max_timestep', default=7, type=int)  # 7 because model starts to predict invalid future images start aroung t=7
+parser.add_argument('--partial_traj', default=7, type=int)  # 7 because model starts to predict invalid future images start aroung t=7
 args = parser.parse_args()
 print(args)
 
@@ -61,7 +61,7 @@ state_dim = env.observation_space.shape
 action_dim = env.action_space.shape[0]
 max_action = torch.tensor(env.action_space.high, dtype=torch.float, device=device)
 
-now = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+now = time.strftime("%Y-%m-%d_%H:%M:%S", time.localtime())
 directory = './logs/exp' + script_name + "DreamGazebo/" + now + "/"
 
 class ReplayBuffer():
@@ -187,7 +187,9 @@ class DDPG_SQIL(object):
         
         self.replay_buffer = ReplayBuffer()
         self.expert_buffer = ReplayBuffer(100000)
-        self.expert_buffer.load("logs/expert_buffer.pth")
+        if os.path.isfile("logs/expert_buffer.pth"):
+            self.expert_buffer.load("logs/expert_buffer.pth")
+            
         self.writer = SummaryWriter(directory)
         # $ tensorboard --logdir='logs/expDDPG_IL.pyDreamGazebo.' --port=16007 &  # on server
         # $ ssh -NfL 16007:localhost:16007 desaixie@40.117.41.247 -i ~/.ssh/Azure-gpu_key_0416.pem  # local machine
@@ -200,19 +202,21 @@ class DDPG_SQIL(object):
         self.batch_size = args.batch_size
         self.train_loader = env.train_loader
         self.test_loader = env.test_loader
+    
+        if not os.path.isfile("logs/expert_buffer.pth"):
+            print("logs/expert_buffer.pth not found, creating expert buffer...")
+            # filling expert_buffer
+            for sequence in self.train_loader:
+                state, action, next_state, done = sequence  # (s, a, s', d) tuple of a whole trajectory
+                state, action, next_state, done = state.squeeze(0), action.squeeze(0), next_state.squeeze(0), done.squeeze(0)  # removing batch dim
+                reward = 1  # SQIL reward of expert trajectory
+                traj_len = len(state)
+                for i in range(traj_len):
+                    # self.expert_buffer.push((torch.tensor(state[i], dtype=torch.float), torch.tensor(action[i], dtype=torch.float), reward, torch.tensor(next_state[i], dtype=torch.float), done[i]))
+                    self.expert_buffer.push((state[i].clone().unsqueeze(0).type(torch.FloatTensor), action[i].clone().type(torch.FloatTensor), reward, next_state[i].clone().unsqueeze(0).type(torch.FloatTensor), done[i].clone()))
+            self.expert_buffer.save("logs/expert_buffer.pth")
+            print(f"expert_buffer len {len(self.expert_buffer.storage)}")  # total of 8162 (s, a, r, s', d) tuples
 
-        # # filling expert_buffer
-        # for sequence in self.train_loader:
-        #     state, action, next_state, done = sequence  # (s, a, s', d) tuple of a whole trajectory
-        #     state, action, next_state, done = state.squeeze(0), action.squeeze(0), next_state.squeeze(0), done.squeeze(0)  # removing batch dim
-        #     reward = 1  # SQIL reward of expert trajectory
-        #     traj_len = len(state)
-        #     for i in range(traj_len):
-        #         # self.expert_buffer.push((torch.tensor(state[i], dtype=torch.float), torch.tensor(action[i], dtype=torch.float), reward, torch.tensor(next_state[i], dtype=torch.float), done[i]))
-        #         self.expert_buffer.push((state[i].clone().unsqueeze(0), action[i].clone(), reward, next_state[i].clone().unsqueeze(0), done[i].clone()))
-        # self.expert_buffer.save("logs/expert_buffer.pth")
-        # print(f"expert_buffer len {len(self.expert_buffer.storage)}")  # total of 8162 (s, a, r, s', d) tuples
-        
     def select_action(self, state):
         self.actor.eval()
         with torch.no_grad():
@@ -357,7 +361,7 @@ def main():
             agent.replay_buffer.push((state, action, reward, next_state, np.float(done)))
             state = next_state
             t_ += 1
-            if done or t_ == args.max_timestep:
+            if done or t_ == args.partial_traj:
                 state = env.reset()
                 t_ = 0
                 
@@ -385,7 +389,7 @@ def main():
                 state = next_state
                 trajectory.append(state.squeeze(dim=0))  # remove batch dimension to be plotted
                 actions.append(action)
-                if done or t >= args.max_timestep:
+                if done or t >= args.partial_traj:
                     break
                 step += 1
                 total_reward += reward
